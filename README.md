@@ -2,7 +2,7 @@
 
 Classificação de padrões de leitura a partir de rastreamento ocular por webcam.
 
-Projeto acadêmico do curso de Ciência da Computação do Centro Universitário Espírito-Santense, desenvolvido para as disciplinas de Inteligência Artificial e Teste de Software.
+Projeto acadêmico do curso de Ciência da Computação do Centro Universitário Espírito-Santense, desenvolvido para a disciplina de Projeto Integrador IV
 
 > **Este sistema não faz diagnóstico.** Ele descreve o padrão de leitura observado e sugere adaptações pedagógicas ao professor. Qualquer avaliação clínica é responsabilidade de profissional habilitado.
 
