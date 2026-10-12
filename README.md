@@ -1,6 +1,6 @@
 # EyeLearn
 
-Classificação de padrões de leitura a partir de rastreamento ocular por webcam.
+Classificação de padrões de leitura a partir de rastreamento ocular por câmera comum.
 
 Projeto acadêmico do curso de Ciência da Computação do Centro Universitário Espírito-Santense, desenvolvido para a disciplina de Projeto Integrador IV
 
@@ -8,10 +8,12 @@ Projeto acadêmico do curso de Ciência da Computação do Centro Universitário
 
 ## O que faz
 
-1. A criança realiza uma atividade de leitura na tela enquanto a webcam acompanha o olhar.
+1. A criança realiza uma atividade de leitura no celular enquanto a câmera frontal acompanha o olhar.
 2. O sistema extrai características do percurso do olhar: fixações, sacadas e regressões.
 3. Um modelo treinado em bases públicas classifica o padrão observado.
-4. O professor vê o resultado em um painel, comparado com a média da turma.
+4. O professor vê o resultado em um painel no computador, comparado com a média da turma.
+
+A criança não vê resultado nenhum: o aplicativo diz que ela terminou, e é tudo.
 
 ## Bases de dados
 
@@ -21,6 +23,18 @@ Não coletamos dados de crianças. O treino e a avaliação usam apenas bases p�
 |---|---|---|
 | [ETDD70](https://doi.org/10.5281/zenodo.13332134) | 70 estudantes de 9–10 anos (35 com dislexia), 3 tarefas de leitura | Zenodo, aberta para pesquisa |
 | [Rojas-Líbano et al. (2019)](https://doi.org/10.6084/m9.figshare.7218725.v3) | 28 crianças com TDAH + 22 controles, EyeLink 1000 a 1 kHz | Figshare, CC BY 4.0 |
+
+## Onde cada parte roda
+
+| Parte | Plataforma | Tecnologia |
+|---|---|---|
+| Atividade do aluno | celular | Flutter + MediaPipe, inferência no aparelho |
+| Painel do professor | computador | PyQt6 + Matplotlib |
+| Treino e experimentos | computador | Python, scikit-learn |
+
+A sessão vai do celular ao painel como um arquivo JSON, pela folha de
+compartilhamento do sistema. **Não há servidor**: nada trafega pela rede a
+partir do aplicativo, e o aplicativo não declara permissão de internet.
 
 ## Estrutura
 
@@ -36,10 +50,18 @@ eyelearn/
   models/train.py              modelos e métricas
   pipeline.py                  do sinal bruto à matriz de características
   experiments/                 curva de degradação
+  export/                      modelo portátil e vetores de ouro para o celular
+  session.py                   importa as sessões do celular, compara a turma
   synthetic.py                 percursos sintéticos com estrutura conhecida
 tests/                         suíte de testes
+scripts/                       geração dos ativos embarcados
+mobile/
+  eyelearn_core/               núcleo em Dart puro, testável sem Flutter
+  eyelearn_app/                aplicativo Flutter do aluno
 relatorio/                     relatório do Projeto Integrador IV
 ```
+
+O aplicativo tem documentação própria em [`mobile/README.md`](mobile/README.md).
 
 ## Como rodar
 
@@ -84,23 +106,47 @@ oferece.
 | `test_properties.py` | invariantes sob entrada arbitrária (Hypothesis) |
 | `test_metamorphic.py` | relações entre entrada e saída transformadas |
 | `test_experiment.py` | estrutura e aritmética da curva de degradação |
+| `test_export.py` | o modelo portátil reproduz o scikit-learn |
+| `test_session.py` | importação das sessões e comparação intraturma |
 
 ```bash
 python -m pytest --cov --cov-report=term-missing   # cobertura
 mutmut run && mutmut results                       # escore de mutação
 ```
 
+O núcleo do aplicativo tem suíte própria, em Dart puro, que inclui o **teste
+diferencial** contra o Python: o pipeline existe nas duas linguagens, e a
+divergência entre elas não apareceria como erro, apenas como predição
+diferente.
+
+```bash
+cd mobile/eyelearn_core && dart test
+python scripts/build_mobile_assets.py --check      # ativos em dia
+```
+
 ## Tecnologias
 
-- **Python 3.11**
-- **OpenCV** e **MediaPipe Face Landmarker** — captura e estimativa do olhar
-- **NumPy**, **Pandas**, **Scikit-learn**, **XGBoost** — modelagem
-- **PyQt6** e **Matplotlib** — interface do aluno e painel do professor
+**Treino e experimentos**
+
+- **Python 3.11**, **NumPy**, **Pandas**, **Scikit-learn**
 - **Pytest**, **Hypothesis**, **Mutmut** — testes
+
+**Aplicativo do aluno (celular)**
+
+- **Flutter** e **Dart** — interface e núcleo de processamento
+- **MediaPipe Face Landmarker** — pontos do rosto e centro da íris, no aparelho
+- Inferência local a partir de um artefato JSON exportado do scikit-learn, sem
+  TensorFlow Lite e sem dependência nativa de aprendizado de máquina
+
+**Painel do professor (computador)**
+
+- **PyQt6** e **Matplotlib**
 
 ## Privacidade
 
-Os quadros da webcam são processados na memória do próprio computador e descartados logo após a extração das coordenadas do olhar. Nenhuma imagem de rosto é gravada ou enviada pela rede.
+Os quadros da câmera são processados na memória do próprio aparelho e descartados logo após a extração das coordenadas do olhar. Nenhuma imagem de rosto é gravada ou enviada pela rede — o aplicativo não declara permissão de internet, e a sessão sai dele como arquivo, por ação de um adulto.
+
+A sessão não carrega nome de criança, apenas um código pseudônimo cuja correspondência fica com o professor, fora do aplicativo. Também não carrega o percurso bruto do olhar: só as características agregadas, que é o que o painel precisa.
 
 Imagem facial é dado biométrico e, portanto, dado pessoal sensível segundo a [Lei Geral de Proteção de Dados](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm).
 

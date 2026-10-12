@@ -91,6 +91,12 @@ pytest_add_cli_args_test_selection = [
     "not slow",
 ]
 
+# O mutmut roda a suíte numa árvore de cópias e, por padrão, só copia o código
+# mutado e os testes. O teste de fronteira de linguagem lê o arquivo de sessão
+# que o lado Dart escreve, e sem ele o baseline falha -- a execução aborta com
+# "failed to collect stats" em vez de reportar um escore.
+also_copy = ["mobile/eyelearn_core/assets"]
+
 [tool.ruff]
 line-length = 95
 target-version = "py311"

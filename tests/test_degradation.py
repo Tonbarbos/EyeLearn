@@ -147,6 +147,16 @@ class TestWebcamGrid:
         assert 0.6 in noises
         assert 1.0 in noises
 
+    def test_covers_the_geometric_estimator_operating_point(self):
+        # O aplicativo do aluno usa ajuste geométrico sobre o deslocamento da
+        # íris, cujo erro é da ordem de 2 a 4 graus -- acima do que a grade
+        # original cobria. Medir só até 1 grau e instalar um aplicativo que
+        # opera a 3 afirmaria sobre o sistema algo que o experimento não
+        # mostra.
+        noises = {level.noise_sigma_deg for level in deg.webcam_grid()}
+        assert 2.0 in noises
+        assert 3.0 in noises
+
     def test_labels_are_unique(self):
         labels = [level.label for level in deg.webcam_grid()]
         assert len(set(labels)) == len(labels)

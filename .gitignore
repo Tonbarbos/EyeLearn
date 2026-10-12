@@ -21,3 +21,11 @@ mutmut-stats.json
 # Zenodo e aponte o caminho na configuração.
 data/
 *.edf
+
+# Dart e Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+# O modelo do MediaPipe não é redistribuído: baixe-o conforme mobile/README.md.
+mobile/eyelearn_app/android/app/src/main/assets/*.task

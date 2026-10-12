@@ -49,10 +49,24 @@ class DegradationLevel:
 def webcam_grid() -> list[DegradationLevel]:
     """Níveis de degradação usados no experimento.
 
-    A grade vai do sinal original ao pior caso plausível de webcam. As taxas
-    cobrem o que uma câmera comum entrega (30 Hz) e o que sobra quando a
-    detecção falha em parte dos quadros (15 Hz). Os desvios de ruído cobrem a
-    faixa relatada para rastreamento por câmera de uso geral.
+    A grade vai do sinal original ao pior caso plausível de captura por câmera.
+    As taxas cobrem o que uma câmera comum entrega (30 Hz) e o que sobra quando
+    a detecção falha em parte dos quadros (15 Hz).
+
+    Os desvios de ruído cobrem duas faixas distintas, e a diferença entre elas
+    importa:
+
+    * **até 1 grau** -- o que Valliappan et al. (2020) relatam para
+      rastreamento por câmera de celular, obtido com uma rede neural treinada e
+      calibração individual;
+    * **2 e 3 graus** -- o que um ajuste geométrico sobre o deslocamento da
+      íris entrega, que é o método implementado no aplicativo do aluno (ver
+      ``GazeCalibration`` em ``mobile/eyelearn_core``).
+
+    Os dois últimos níveis foram acrescentados depois: a grade original parava
+    em 1 grau e, portanto, não cobria o ponto de operação do próprio
+    aplicativo. Medir a acurácia só até 1 grau e instalar um aplicativo que
+    opera a 3 seria afirmar sobre o sistema algo que o experimento não mostra.
     """
     return [
         DegradationLevel(None, 0.0, "original"),
@@ -61,6 +75,8 @@ def webcam_grid() -> list[DegradationLevel]:
         DegradationLevel(30.0, 0.3, "30 Hz + 0,3°"),
         DegradationLevel(30.0, 0.6, "30 Hz + 0,6°"),
         DegradationLevel(30.0, 1.0, "30 Hz + 1,0°"),
+        DegradationLevel(30.0, 2.0, "30 Hz + 2,0°"),
+        DegradationLevel(30.0, 3.0, "30 Hz + 3,0°"),
         DegradationLevel(15.0, 1.0, "15 Hz + 1,0°"),
     ]
 

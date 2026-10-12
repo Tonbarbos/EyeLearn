@@ -65,3 +65,60 @@ jobs:
         run: |
           mutmut run --max-children 4 || true
           mutmut results
+
+  dart:
+    # O núcleo do aplicativo é Dart puro, sem dependência de Flutter, de
+    # propósito: a suíte roda aqui sem SDK do Flutter, sem Android e sem
+    # emulador. O que não roda aqui é a camada de interface, que precisa do
+    # Flutter.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile/eyelearn_core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Instalar dependências
+        run: dart pub get
+
+      - name: Conferir a formatação
+        run: dart format --output=none --set-exit-if-changed lib test tool
+
+      - name: Analisar
+        run: dart analyze --fatal-infos
+
+      - name: Rodar a suíte
+        # Inclui o teste diferencial contra os vetores de ouro do Python, que é
+        # o que garante que as duas implementações do pipeline concordem.
+        run: dart test
+
+  assets:
+    # Os ativos embarcados (modelo e vetores de ouro) são gerados do lado
+    # Python e commitados. Se alguém mudar o pipeline e esquecer de regerá-los,
+    # a suíte Dart continuaria passando contra um arquivo velho -- e o
+    # aplicativo embarcaria um modelo que espera outra extração.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Conferir que os ativos commitados estão em dia
+        # --check não escreve nada e ignora o instante de exportação, que muda
+        # a cada execução: comparar o arquivo inteiro falharia sempre, e uma
+        # verificação que falha sempre é desligada na primeira semana.
+        run: python scripts/build_mobile_assets.py --check

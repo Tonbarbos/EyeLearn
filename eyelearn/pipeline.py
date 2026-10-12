@@ -7,6 +7,7 @@ entre os dois invalidaria a comparação entre os níveis de degradação.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -24,7 +25,16 @@ class PipelineConfig:
 
     Attributes:
         method: detector de eventos, ``"ivt"`` ou ``"idt"``.
-        smoothing_window: janela da média móvel, em amostras.
+        smoothing_ms: janela da média móvel, em **milissegundos**. A conversão
+            para amostras usa a taxa de amostragem de cada percurso.
+
+            A janela precisa ser definida em tempo, não em amostras, porque o
+            projeto compara propositalmente taxas de amostragem diferentes.
+            Uma janela de cinco amostras dura 20 ms a 250 Hz e 167 ms a 30 Hz
+            -- e 167 ms de média móvel atravessam uma sacada inteira e a
+            apagam. Fixada em amostras, a janela faria a curva de degradação
+            medir o alargamento da própria suavização em vez da perda de
+            precisão espacial, que é o que o experimento quer medir.
         max_gap: intervalo máximo entre amostras consecutivas, em segundos.
         bounds_deg: limites da área de estímulo, em graus, ou ``None``.
         velocity_threshold: limiar do I-VT, em graus por segundo.
@@ -33,7 +43,7 @@ class PipelineConfig:
     """
 
     method: Literal["ivt", "idt"] = "ivt"
-    smoothing_window: int = 5
+    smoothing_ms: float = 20.0
     max_gap: float = 0.075
     bounds_deg: tuple[float, float] | None = None
     velocity_threshold: float = events.VELOCITY_THRESHOLD
@@ -46,6 +56,28 @@ class PipelineConfig:
         if self.method == "ivt":
             return {**shared, "velocity_threshold": self.velocity_threshold}
         return {**shared, "dispersion_threshold": self.dispersion_threshold}
+
+    def smoothing_window(self, sampling_rate: float) -> int:
+        """Janela da média móvel em amostras, para a taxa informada.
+
+        Arredonda para o ímpar mais próximo, porque a média móvel precisa ficar
+        centrada na amostra para não deslocar o sinal no tempo. Empates vão
+        para baixo: suavizar de menos deixa tremor, suavizar de mais come a
+        sacada, e o segundo erro custa mais caro.
+
+        Taxas baixas caem em janela 1, que é a identidade. A 30 Hz uma sacada
+        ocupa cerca de uma amostra: não há tremor de alta frequência a remover
+        sem levar a sacada junto.
+        """
+        if sampling_rate <= 0:
+            return 1
+
+        samples = self.smoothing_ms * sampling_rate / 1000.0
+        # Maior ímpar não maior que `samples`, e o ímpar seguinte.
+        lower = math.floor((samples - 1) / 2) * 2 + 1
+        upper = lower + 2
+        window = lower if (samples - lower) <= (upper - samples) else upper
+        return max(window, 1)
 
 
 def trace_to_features(
@@ -64,7 +96,9 @@ def trace_to_features(
     task_duration = trace.duration
 
     cleaned = preprocess.drop_invalid(trace, config.bounds_deg)
-    smoothed = preprocess.smooth(cleaned, config.smoothing_window)
+    # A janela é derivada da taxa do percurso já limpo, que é a taxa com que o
+    # sinal efetivamente chega ao detector.
+    smoothed = preprocess.smooth(cleaned, config.smoothing_window(cleaned.sampling_rate))
 
     fixations, saccades = events.detect_events(
         smoothed,

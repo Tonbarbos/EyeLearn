@@ -1,0 +1,43 @@
+name: eyelearn_app
+description: >-
+  Aplicativo do aluno: a criança lê na tela enquanto a câmera frontal acompanha
+  o olhar. Não apresenta resultado nenhum à criança -- a saída pedagógica vai
+  para o painel do professor.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # O núcleo de processamento e inferência, em Dart puro e já testado.
+  # Caminho local, não pacote publicado: os dois evoluem juntos, e uma versão
+  # do núcleo diferente da que gerou os ativos produziria predição errada.
+  eyelearn_core:
+    path: ../eyelearn_core
+
+  # Sem o pacote `camera`: o lado nativo já detém a câmera pelo CameraX, e abrir
+  # um segundo cliente sobre o mesmo sensor falha no Android. Uma
+  # pré-visualização para o adulto conferir o enquadramento teria de vir do lado
+  # nativo, como PlatformView -- está pendente.
+
+  # Permissão de câmera em tempo de execução.
+  permission_handler: ^11.3.1
+
+  # Compartilhamento do arquivo de sessão pela folha do sistema. É o que
+  # substitui um servidor: nada trafega pela rede.
+  share_plus: ^10.0.2
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  assets:
+    - assets/model.json
