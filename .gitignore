@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Cobertura
+.coverage
+coverage.xml
+htmlcov/
+
+# Teste de mutação: o mutmut gera uma árvore inteira de cópias mutadas.
+mutants/
+.mutmut-cache
+mutmut-stats.json
+
+# Bases de dados não são redistribuídas no repositório. Baixe o ETDD70 do
+# Zenodo e aponte o caminho na configuração.
+data/
+*.edf

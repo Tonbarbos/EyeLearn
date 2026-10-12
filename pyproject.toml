@@ -1,0 +1,101 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eyelearn"
+version = "0.1.0"
+description = "Classificação de padrões de leitura a partir de rastreamento ocular"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "scikit-learn>=1.4",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+# Captura por webcam. Fica separada porque o pipeline de modelagem roda sobre
+# as bases públicas e não precisa de câmera -- nem a integração contínua.
+capture = [
+    "opencv-python>=4.9",
+    "mediapipe>=0.10",
+]
+ui = [
+    "PyQt6>=6.6",
+    "matplotlib>=3.8",
+]
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.100",
+    "mutmut>=2.4",
+]
+
+[tool.setuptools.packages.find]
+include = ["eyelearn*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"
+markers = [
+    "slow: treina modelos ou roda validação cruzada completa; excluído da seleção do teste de mutação",
+]
+filterwarnings = [
+    "error",
+    # O scikit-learn emite avisos de descontinuação de dependências que não
+    # controlamos. Avisos do próprio projeto continuam virando erro.
+    "default::DeprecationWarning:sklearn.*",
+    "default::FutureWarning:sklearn.*",
+]
+
+[tool.coverage.run]
+source = ["eyelearn"]
+branch = true
+
+[tool.coverage.report]
+# O gerador sintético é instrumento de teste, não código de produção, e as
+# linhas de proteção contra entrada impossível não têm como ser exercitadas.
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.mutmut]
+# O teste de mutação insere defeitos artificiais no código e mede quantos a
+# suíte detecta (seção 4.5 da metodologia).
+source_paths = ["eyelearn"]
+
+# Muta só os módulos de cálculo. Mutar leitura de arquivo e laços de treino
+# produz mutantes que morrem por erro de entrada/saída ou que levam minutos
+# cada um: o escore sobe sem dizer nada sobre a qualidade dos testes.
+only_mutate = [
+    "eyelearn/signal/*",
+    "eyelearn/features/*",
+    "eyelearn/degradation/*",
+    "eyelearn/models/validation.py",
+]
+
+# Cada mutante roda a seleção inteira, então ela precisa ser rápida e, ao mesmo
+# tempo, cobrir todo módulo listado em only_mutate -- um módulo mutado sem teste
+# na seleção produz apenas mutantes "sem teste", que não entram no escore.
+# Os testes marcados como lentos treinam modelos ou geram centenas de exemplos,
+# e ficam de fora: incluí-los multiplicaria o tempo total por cem.
+pytest_add_cli_args_test_selection = [
+    "tests/",
+    "-m",
+    "not slow",
+]
+
+[tool.ruff]
+line-length = 95
+target-version = "py311"
+# Árvore de cópias mutadas gerada pelo mutmut: código gerado, não código nosso.
+extend-exclude = ["mutants"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
