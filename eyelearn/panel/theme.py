@@ -95,6 +95,11 @@ def stylesheet() -> str:
         border: 1px solid {LINE};
         border-radius: 18px;
     }}
+    /* Mesmo caso da barra do topo: sem isto, cada rótulo dentro do cartão
+       herda o fundo global e aparece como uma faixa lilás sobre o branco. */
+    QFrame[card="true"] QLabel {{
+        background: transparent;
+    }}
 
     QLabel[role="title"] {{
         font-size: 19px;
@@ -169,6 +174,33 @@ def stylesheet() -> str:
         border: 1px solid {LINE};
     }}
     QPushButton[variant="ghost"]:hover {{ background: {BACKGROUND}; }}
+
+    QLineEdit {{
+        background: {SURFACE};
+        border: 1px solid {LINE};
+        border-radius: 12px;
+        padding: 9px 12px;
+    }}
+    QLineEdit:focus {{ border: 1px solid {BRAND}; }}
+
+    QTableWidget {{
+        background: {SURFACE};
+        border: 1px solid {LINE};
+        border-radius: 14px;
+        gridline-color: {LINE};
+        selection-background-color: {BRAND_SOFT};
+        selection-color: {BRAND_DEEP};
+    }}
+    QHeaderView::section {{
+        background: {SURFACE};
+        color: {INK_MUTED};
+        border: none;
+        border-bottom: 1px solid {LINE};
+        padding: 8px 10px;
+        font-weight: 700;
+    }}
+    QDialog {{ background: {BACKGROUND}; }}
+    QPushButton:disabled {{ background: {LINE}; color: {INK_MUTED}; }}
 
     QScrollArea {{ border: none; background: transparent; }}
     QScrollBar:vertical {{

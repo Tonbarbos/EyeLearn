@@ -8,6 +8,10 @@ número daqui diz nada sobre leitura.
 Uso::
 
     python scripts/make_demo_class.py --out /tmp/turma --students 18
+    python scripts/make_demo_class.py --out /tmp/turma --db /tmp/demo.db
+
+Com ``--db``, cria também um banco com professor, turma e alunos de nomes
+fictícios, e importa as sessões nele. O login é ``demo`` / ``demonstracao``.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from eyelearn.export.artifact import ModelArtifact  # noqa: E402
 from eyelearn.features.reading import FEATURE_NAMES  # noqa: E402
 from eyelearn.pipeline import PipelineConfig, trace_to_features  # noqa: E402
 from eyelearn.session import SESSION_FORMAT_VERSION  # noqa: E402
+from eyelearn.storage.store import Store  # noqa: E402
 from eyelearn.synthetic import reading_trace  # noqa: E402
 
 ARTIFACT = REPOSITORY_ROOT / "mobile" / "eyelearn_core" / "assets" / "model.json"
@@ -35,13 +40,43 @@ ARTIFACT = REPOSITORY_ROOT / "mobile" / "eyelearn_core" / "assets" / "model.json
 #: Tarefas, na ordem do ETDD70.
 TASKS = ("syllables", "text", "pseudotext")
 
+DEMO_USER = "demo"
+DEMO_PASSWORD = "demonstracao"
+
+#: Nomes fictícios para a demonstração com banco.
+DEMO_NAMES = (
+    "Alice Moreira", "Benício Rocha", "Cecília Alves", "Davi Nogueira",
+    "Elisa Fontes", "Felipe Duarte", "Giovana Ramos", "Heitor Campos",
+    "Isadora Leal", "Joaquim Prates", "Laura Teixeira", "Miguel Barros",
+    "Natália Cunha", "Otávio Lins", "Pietra Souza", "Rafael Dias",
+    "Sofia Mendes", "Theo Carvalho", "Valentina Reis", "Yuri Antunes",
+)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="pasta de saída")
     parser.add_argument("--students", type=int, default=18)
     parser.add_argument("--seed", type=int, default=11)
+    parser.add_argument("--db", type=Path, help="cria também um banco de demonstração")
     args = parser.parse_args()
+    if args.db and args.students > len(DEMO_NAMES):
+        parser.error(f"com --db, no máximo {len(DEMO_NAMES)} alunos")
+
+    codes = [f"A{index + 1:02d}" for index in range(args.students)]
+    store = teacher = None
+    if args.db:
+        if args.db.exists():
+            args.db.unlink()
+        store = Store.open(args.db)
+        teacher = store.create_teacher(DEMO_USER, "Helena Prado", DEMO_PASSWORD)
+        classroom = store.create_class(
+            teacher, "5º A", school="Escola de demonstração", grade="5º ano"
+        )
+        codes = [
+            store.add_student(teacher, classroom.id, name).student.code
+            for name in DEMO_NAMES[: args.students]
+        ]
 
     artifact = ModelArtifact.load(ARTIFACT)
     config = PipelineConfig()
@@ -55,7 +90,7 @@ def main() -> int:
     written = 0
 
     for index in range(args.students):
-        code = f"A{index + 1:02d}"
+        code = codes[index]
 
         # Cada criança tem o seu nível de esforço de leitura, sorteado uma vez
         # e mantido nas três tarefas -- é o que faz a turma ter dispersão e um
@@ -113,6 +148,13 @@ def main() -> int:
             written += 1
 
     print(f"{written} sessões de {args.students} participantes em {args.out}")
+    if store is not None:
+        report = store.import_files(teacher, sorted(args.out.glob("*.json")))
+        store.close()
+        print(
+            f"banco {args.db}: {len(report.imported)} sessões importadas; "
+            f"login {DEMO_USER} / {DEMO_PASSWORD}"
+        )
     print("ATENÇÃO: dados sintéticos. Nenhum número aqui diz nada sobre leitura.")
     return 0
 

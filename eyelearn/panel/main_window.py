@@ -3,6 +3,10 @@
 Só montagem de widgets: o cálculo está em :mod:`eyelearn.session` e o gráfico
 em :mod:`eyelearn.panel.charts`, ambos verificáveis sem abrir janela.
 
+Dois modos. Com banco (o normal), o professor entra com usuário e senha, vê os
+alunos pelo nome e importa as sessões para a turma. Sem banco, abre uma pasta de
+sessões soltas, identificadas só pelo código -- é o modo de demonstração.
+
 O painel **descreve e sugere; não diagnostica**. Não há em lugar nenhum um
 rótulo de condição, uma pontuação apresentada como resultado ou um semáforo de
 risco. O que ele mostra é onde a leitura de uma criança fica em relação à dos
@@ -24,6 +28,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -32,6 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 from eyelearn.panel import charts, theme
+from eyelearn.panel.accounts import StudentsDialog
 from eyelearn.session import (
     ClassComparison,
     Session,
@@ -39,6 +45,7 @@ from eyelearn.session import (
     load_sessions,
     suggestions_for,
 )
+from eyelearn.storage.store import ImportReport, Store, Teacher
 
 TASK_LABELS = {
     "syllables": "Sílabas",
@@ -68,12 +75,25 @@ def _label(text: str, role: str | None = None, wrap: bool = False) -> QLabel:
 class PanelWindow(QWidget):
     """A janela inteira."""
 
-    def __init__(self, folder: Path | None = None) -> None:
+    def __init__(
+        self,
+        folder: Path | None = None,
+        *,
+        store: Store | None = None,
+        teacher: Teacher | None = None,
+    ) -> None:
         super().__init__()
+        if (store is None) != (teacher is None):
+            raise ValueError("store e teacher andam juntos")
         self.setWindowTitle("EyeLearn — painel do professor")
         self.resize(1280, 820)
         self.setStyleSheet(theme.stylesheet())
 
+        self._store = store
+        self._teacher = teacher
+        #: Código -> nome completo. Vazio no modo de demonstração, em que a
+        #: lista mostra só o código.
+        self._names: dict[str, str] = {}
         self._sessions: list[Session] = []
         self._comparison: ClassComparison | None = None
         self._figure = Figure(figsize=(7.2, 4.0), dpi=110)
@@ -92,8 +112,12 @@ class PanelWindow(QWidget):
         body_layout.addWidget(self._build_columns(), stretch=1)
         root.addWidget(body, stretch=1)
 
-        if folder is not None:
+        if store is not None:
+            self._refresh_classes()
+        elif folder is not None:
             self.load_folder(folder)
+        else:
+            self._recompute()
 
     # -- construção ---------------------------------------------------------
 
@@ -117,7 +141,9 @@ class PanelWindow(QWidget):
         layout.addLayout(titles)
         layout.addStretch()
 
-        self._folder_label = QLabel("Nenhuma turma carregada")
+        self._folder_label = QLabel(
+            f"Prof. {self._teacher.name}" if self._teacher else "Nenhuma turma carregada"
+        )
         self._folder_label.setObjectName("heroSub")
         layout.addWidget(self._folder_label)
         return bar
@@ -128,9 +154,23 @@ class PanelWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self._open_button = QPushButton("Abrir sessões…")
-        self._open_button.clicked.connect(self._choose_folder)
-        layout.addWidget(self._open_button)
+        if self._store is None:
+            self._open_button = QPushButton("Abrir sessões…")
+            self._open_button.clicked.connect(self._choose_folder)
+            layout.addWidget(self._open_button)
+        else:
+            self._class_box = QComboBox()
+            self._class_box.currentIndexChanged.connect(lambda _: self.load_class())
+            layout.addWidget(self._class_box)
+
+            self._import_button = QPushButton("Importar sessões…")
+            self._import_button.clicked.connect(self._choose_session_files)
+            layout.addWidget(self._import_button)
+
+            students = QPushButton("Alunos e turmas…")
+            students.setProperty("variant", "ghost")
+            students.clicked.connect(self._open_students)
+            layout.addWidget(students)
 
         self._task_box = QComboBox()
         for task_id, label in TASK_LABELS.items():
@@ -188,10 +228,65 @@ class PanelWindow(QWidget):
             self.load_folder(Path(chosen))
 
     def load_folder(self, folder: Path) -> None:
-        """Importa todas as sessões de uma pasta."""
-        self._sessions = load_sessions(folder)
-        self._folder_label.setText(f"{folder.name} · {len(self._sessions)} sessões")
+        """Modo de demonstração: lê as sessões de uma pasta, sem banco."""
+        sessions = load_sessions(folder)
+        self._folder_label.setText(f"{folder.name} · {len(sessions)} sessões")
+        self._set_sessions(sessions)
 
+    # -- modo com banco -----------------------------------------------------
+
+    def _refresh_classes(self, select: int | None = None) -> None:
+        current = self._class_box.currentData() if select is None else select
+        self._class_box.blockSignals(True)
+        self._class_box.clear()
+        for classroom in self._store.classes(self._teacher):
+            self._class_box.addItem(classroom.name, classroom.id)
+        index = self._class_box.findData(current)
+        self._class_box.setCurrentIndex(max(index, 0))
+        self._class_box.blockSignals(False)
+        self._import_button.setEnabled(self._class_box.count() > 0)
+        self.load_class()
+
+    def load_class(self) -> None:
+        """Carrega as sessões e os nomes da turma escolhida."""
+        class_id = self._class_box.currentData()
+        if class_id is None:
+            self._names = {}
+            self._set_sessions([])
+            return
+        self._names = {
+            s.code: s.full_name for s in self._store.students(self._teacher, class_id)
+        }
+        self._set_sessions(self._store.sessions(self._teacher, class_id))
+
+    def import_files(self, paths: list[Path]) -> ImportReport:
+        report = self._store.import_files(self._teacher, paths)
+        self.load_class()
+        return report
+
+    def _choose_session_files(self) -> None:
+        chosen, _ = QFileDialog.getOpenFileNames(
+            self, "Sessões exportadas do celular", "", "Sessão EyeLearn (*.json)"
+        )
+        if not chosen:
+            return
+        report = self.import_files([Path(path) for path in chosen])
+        QMessageBox.information(self, "Importação", describe_import(report))
+
+    def _open_students(self) -> None:
+        dialog = StudentsDialog(
+            self._store, self._teacher, self._class_box.currentData(), parent=self
+        )
+        dialog.exec()
+        self._refresh_classes(select=dialog.class_id)
+
+    def display_name(self, code: str) -> str:
+        return self._names.get(code, code)
+
+    # -- comum aos dois modos ----------------------------------------------
+
+    def _set_sessions(self, sessions: list[Session]) -> None:
+        self._sessions = sessions
         synthetic = any(s.trained_on_synthetic_data for s in self._sessions)
         self._synthetic_banner.setVisible(synthetic)
         if synthetic:
@@ -211,7 +306,7 @@ class PanelWindow(QWidget):
 
         if not self._sessions:
             self._summary_label.setText("")
-            self._render_empty("Abra uma pasta com sessões exportadas do celular.")
+            self._render_empty(self._empty_message())
             return
 
         try:
@@ -234,15 +329,18 @@ class PanelWindow(QWidget):
             f"{len(flagged)} para observar · {len(discarded)} fora por qualidade"
         )
 
-        for code in comparison.participant_codes:
+        for code in sorted(comparison.participant_codes, key=self.display_name):
             item = QListWidgetItem(
-                f"{code}      {'•  observar' if code in flagged else ''}".rstrip()
+                f"{self.display_name(code)}      "
+                f"{'•  observar' if code in flagged else ''}".rstrip()
             )
             item.setData(Qt.ItemDataRole.UserRole, code)
             self._class_list.addItem(item)
 
         for session in discarded:
-            item = QListWidgetItem(f"{session.participant_code}      captura ruim")
+            item = QListWidgetItem(
+                f"{self.display_name(session.participant_code)}      captura ruim"
+            )
             item.setForeground(Qt.GlobalColor.gray)
             item.setData(Qt.ItemDataRole.UserRole, None)
             self._class_list.addItem(item)
@@ -251,6 +349,19 @@ class PanelWindow(QWidget):
             self._class_list.setCurrentRow(0)
 
     # -- apresentação -------------------------------------------------------
+
+    def _empty_message(self) -> str:
+        if self._store is None:
+            return "Abra uma pasta com sessões exportadas do celular."
+        if self._class_box.count() == 0:
+            return (
+                "Nenhuma turma ainda. Em “Alunos e turmas”, crie a turma, "
+                "cadastre os alunos e exporte a lista para o celular."
+            )
+        return (
+            "Nenhuma sessão desta turma ainda. Depois da atividade, importe os "
+            "arquivos que o celular compartilhou em “Importar sessões”."
+        )
 
     def _clear_detail(self) -> None:
         while self._detail_layout.count():
@@ -285,7 +396,10 @@ class PanelWindow(QWidget):
         card, layout = _card()
 
         header = QHBoxLayout()
-        header.addWidget(_label(f"Participante {code}", "title"))
+        name = self._names.get(code)
+        header.addWidget(_label(name or f"Participante {code}", "title"))
+        if name:
+            header.addWidget(_label(code, "muted"))
         header.addStretch()
         header.addWidget(
             _label(TASK_LABELS.get(comparison.task, comparison.task), "muted")
@@ -347,3 +461,22 @@ class PanelWindow(QWidget):
             )
         )
         return card
+
+
+def describe_import(report: ImportReport) -> str:
+    """O resultado da importação, em frases para o professor."""
+    lines = [f"{len(report.imported)} sessão(ões) importada(s)."]
+    if report.duplicates:
+        lines.append(f"{len(report.duplicates)} já estavam no banco e foram ignoradas.")
+    if report.unknown_codes:
+        codes = ", ".join(sorted(set(report.unknown_codes)))
+        lines.append(
+            f"{len(report.unknown_codes)} de código que não é de aluno seu ({codes}): "
+            "confira se a lista no celular é desta turma."
+        )
+    if report.unreadable:
+        lines.append(
+            f"{len(report.unreadable)} arquivo(s) ilegível(is): "
+            + ", ".join(report.unreadable)
+        )
+    return "\n".join(lines)

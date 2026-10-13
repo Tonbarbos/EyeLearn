@@ -95,11 +95,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[test,panel]"
 
-      - name: Gerar uma turma de demonstração
-        run: python scripts/make_demo_class.py --out /tmp/turma --students 12
+      - name: Gerar uma turma de demonstração, com banco
+        run: python scripts/make_demo_class.py --out /tmp/turma --students 12 --db /tmp/demo.db
 
       - name: Abrir o painel e fechar
-        run: xvfb-run -a python scripts/smoke_panel.py /tmp/turma
+        run: |
+          xvfb-run -a python scripts/smoke_panel.py /tmp/turma
+          xvfb-run -a python scripts/smoke_panel.py --db /tmp/demo.db
+
+      - name: Testar as telas de login e cadastro
+        # Pulado no job pytest, que não instala Qt.
+        run: xvfb-run -a python -m pytest tests/test_panel_accounts.py
 
   dart:
     # O núcleo do aplicativo é Dart puro, sem dependência de Flutter, de

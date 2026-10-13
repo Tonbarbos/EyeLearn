@@ -52,7 +52,7 @@ eyelearn/
   experiments/                 curva de degradação
   export/                      modelo portátil e vetores de ouro para o celular
   session.py                   importa as sessões do celular, compara a turma
-  storage/                     SQLite local: credenciais (scrypt) e migrações
+  storage/                     banco SQLite do painel: professores, turmas, alunos, sessões
   panel/                       painel do professor (PyQt6 + Matplotlib)
   synthetic.py                 percursos sintéticos com estrutura conhecida
 tests/                         suíte de testes
@@ -111,7 +111,8 @@ oferece.
 | `test_export.py` | o modelo portátil reproduz o scikit-learn |
 | `test_session.py` | importação das sessões e comparação intraturma |
 | `test_panel.py` | gráfico do painel, e que ele descreve sem diagnosticar |
-| `test_storage.py` | hash de senha e PIN, limite de tentativas, migrações atômicas |
+| `test_storage.py` | banco: senha e PIN, bloqueio, migrações, isolamento entre professores, exclusão |
+| `test_panel_accounts.py` | telas de login e de cadastro (precisa de PyQt6) |
 
 ```bash
 python -m pytest --cov --cov-report=term-missing   # cobertura
@@ -132,16 +133,48 @@ python scripts/build_mobile_assets.py --check      # ativos em dia
 
 ```bash
 pip install -e ".[panel]"
-python -m eyelearn.panel CAMINHO/DAS/SESSOES
+python -m eyelearn.panel
 ```
 
-Importa os arquivos JSON que o celular exporta, compara a turma e sugere
-adaptações. Para experimentar sem celular:
+Na primeira vez, o painel pede para criar a conta de professor. Depois, em
+**Alunos e turmas**, o professor cria a turma, cadastra os alunos (cada um
+recebe um código e um PIN de 4 dígitos, mostrado uma vez) e exporta a **lista
+da turma** para o celular. No celular, a criança toca no próprio nome e digita o
+PIN. As sessões voltam como arquivos e entram no banco por **Importar sessões**.
+
+O banco é um arquivo SQLite na pasta de dados do usuário
+(`%APPDATA%\EyeLearn\eyelearn.db` no Windows, `~/.local/share/eyelearn/` no
+Linux); `--db ARQUIVO` usa outro. Não há servidor.
+
+Para experimentar sem celular, com uma turma fictícia já cadastrada (login
+`demo`, senha `demonstracao`):
 
 ```bash
-python scripts/make_demo_class.py --out /tmp/turma
-python -m eyelearn.panel /tmp/turma
+python scripts/make_demo_class.py --out /tmp/turma --db /tmp/demo.db
+python -m eyelearn.panel --db /tmp/demo.db
+python -m eyelearn.panel /tmp/turma          # ou só as sessões, sem banco nem login
 ```
+
+### Banco de dados
+
+O esquema (`eyelearn/storage/schema.py`) parte do banco do projeto anterior,
+EyeLearn-Apollo, que usava MySQL com as tabelas `Alunos`, `Sessoes` e
+`Diagnosticos`. O que mudou e por quê:
+
+| Antes (MySQL) | Agora (SQLite) | Motivo |
+|---|---|---|
+| servidor MySQL, senha no código | um arquivo, sem servidor | nada trafega pela rede; nada a configurar na escola |
+| sem login: o aluno escolhia o nome numa lista, o professor entrava direto | professor com usuário e senha; aluno com nome e PIN | um professor não vê os alunos de outro; uma criança não grava sessão no nome da colega |
+| tabela `Diagnosticos` ("Possível TDAH", "Possível Dislexia") | não existe | o sistema não diagnostica, e o banco não tem onde gravar rótulo |
+| `genero` | não existe | nenhuma parte do pipeline usa (LGPD, art. 6º, III) |
+| escola, série e turma repetidas em cada aluno | tabela `turmas` | "5A" e "5º A" viravam duas turmas |
+| pontuação, erros, caminho do mapa de calor | JSON da sessão, como veio do celular | as medidas agora são as do percurso do olhar |
+
+Senha e PIN são gravados como hash com sal (scrypt e PBKDF2-SHA256); depois de
+cinco erros seguidos, o login fica bloqueado por um minuto, e o bloqueio dobra a
+cada repetição. O PIN de quatro dígitos tem dez mil combinações e não resiste a
+quem tiver o arquivo do banco: quem o protege é o bloqueio na tela, e o arquivo
+ficar no computador do professor.
 
 O que o painel mostra, e o que ele recusa mostrar:
 
@@ -183,7 +216,9 @@ O que o painel mostra, e o que ele recusa mostrar:
 
 Os quadros da câmera são processados na memória do próprio aparelho e descartados logo após a extração das coordenadas do olhar. Nenhuma imagem de rosto é gravada ou enviada pela rede — o aplicativo não declara permissão de internet, e a sessão sai dele como arquivo, por ação de um adulto.
 
-A sessão não carrega nome de criança, apenas um código pseudônimo cuja correspondência fica com o professor, fora do aplicativo. Também não carrega o percurso bruto do olhar: só as características agregadas, que é o que o painel precisa.
+A sessão não carrega nome de criança, apenas um código pseudônimo. Também não carrega o percurso bruto do olhar: só as características agregadas, que é o que o painel precisa.
+
+O nome completo e a data de nascimento ficam só no banco do professor, no computador dele. A lista da turma que vai para o celular leva o primeiro nome com a inicial do sobrenome ("Ana S."), o código e o PIN em forma de hash -- é o mínimo para a criança se reconhecer na tela. Apagar um aluno no painel apaga junto todas as sessões dele (LGPD, art. 18, VI).
 
 Imagem facial é dado biométrico e, portanto, dado pessoal sensível segundo a [Lei Geral de Proteção de Dados](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm).
 
