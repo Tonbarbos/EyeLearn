@@ -20,6 +20,8 @@ import 'src/session/session_export.dart';
 import 'src/ui/calibration_screen.dart';
 import 'src/ui/finished_screen.dart';
 import 'src/ui/reading_screen.dart';
+import 'src/ui/theme.dart';
+import 'src/ui/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,10 +42,7 @@ class EyeLearnApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         title: 'EyeLearn',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorSchemeSeed: const Color(0xFF1565C0),
-          useMaterial3: true,
-        ),
+        theme: buildAppTheme(),
         home: SetupScreen(artifact: artifact),
       );
 }
@@ -117,79 +116,219 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('EyeLearn')),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Este aplicativo não faz diagnóstico. Ele descreve o padrão '
-                'de leitura observado e envia ao professor uma sugestão de '
-                'adaptação pedagógica. Qualquer avaliação clínica é '
-                'responsabilidade de profissional habilitado.',
-                style: TextStyle(fontSize: 15, height: 1.4),
-              ),
-              if (_trainedOnSyntheticData) ...[
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _Hero(),
+                const SizedBox(height: 26),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('Quem vai ler hoje?', style: AppType.title),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _codeController,
+                        textCapitalization: TextCapitalization.characters,
+                        style: AppType.body.copyWith(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Código do participante',
+                          helperText: 'Nunca o nome da criança',
+                          helperStyle: AppType.body.copyWith(
+                            fontSize: 12.5,
+                            color: Palette.inkMuted,
+                          ),
+                          prefixIcon: const Icon(Icons.badge_outlined),
+                          filled: true,
+                          fillColor: Palette.background,
+                          border: OutlineInputBorder(
+                            borderRadius:
+                                BorderRadius.circular(Shapes.chipRadius + 2),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text('Atividade', style: AppType.label),
+                      const SizedBox(height: 10),
+                      _TaskPicker(
+                        selected: _passage,
+                        onChanged: (passage) =>
+                            setState(() => _passage = passage),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFE3E3),
-                    borderRadius: BorderRadius.circular(12),
+                const NoticeCard(
+                  icon: Icons.info_outline_rounded,
+                  tint: Color(0xFF3A2FB0),
+                  background: Palette.brandSoft,
+                  text:
+                      'Este aplicativo não faz diagnóstico. Ele descreve o padrão '
+                      'de leitura observado e sugere adaptações ao professor. '
+                      'Avaliação clínica é de profissional habilitado.',
+                ),
+                if (_trainedOnSyntheticData) ...[
+                  const SizedBox(height: 10),
+                  const NoticeCard(
+                    icon: Icons.science_outlined,
+                    tint: Color(0xFFA32317),
+                    background: Palette.coralSoft,
+                    text:
+                        'O modelo embarcado foi treinado em dados sintéticos e não '
+                        'aprendeu nada sobre leitura. Serve só para experimentar.',
                   ),
-                  child: const Text(
-                    'Atenção: o modelo embarcado foi treinado em dados '
-                    'sintéticos e não aprendeu nada sobre leitura. Serve '
-                    'apenas para experimentar o aplicativo.',
-                    style: TextStyle(fontSize: 15, color: Color(0xFF610404)),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  NoticeCard(
+                    icon: Icons.error_outline_rounded,
+                    tint: const Color(0xFFA32317),
+                    background: Palette.coralSoft,
+                    text: _error!,
                   ),
+                ],
+                const SizedBox(height: 22),
+                PrimaryButton(
+                  label: 'Calibrar e começar',
+                  icon: Icons.play_arrow_rounded,
+                  onPressed: _begin,
                 ),
               ],
-              const SizedBox(height: 28),
-              TextField(
-                controller: _codeController,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Código do participante',
-                  helperText: 'Nunca o nome da criança',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+          ),
+        ),
+      );
+}
+
+/// O cabeçalho de marca da tela inicial.
+class _Hero extends StatelessWidget {
+  const _Hero();
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Shapes.cardRadius + 4),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Palette.brand, Palette.brandDeep],
               ),
-              const SizedBox(height: 20),
-              DropdownButtonFormField<Passage>(
-                initialValue: _passage,
-                decoration: const InputDecoration(
-                  labelText: 'Tarefa',
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final passage in passages)
-                    DropdownMenuItem(
-                        value: passage, child: Text(passage.title)),
-                ],
-                onChanged: (passage) {
-                  if (passage != null) setState(() => _passage = passage);
-                },
-              ),
-              if (_error != null) ...[
+              boxShadow: Shapes.buttonShadow,
+            ),
+            child: Column(
+              children: [
+                const EyeMascot(size: 92, iris: Palette.amber),
                 const SizedBox(height: 16),
                 Text(
-                  _error!,
-                  style:
-                      const TextStyle(color: Color(0xFF610404), fontSize: 15),
+                  'EyeLearn',
+                  style: AppType.display
+                      .copyWith(color: Colors.white, fontSize: 30),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Vamos ler juntos?',
+                  style: AppType.subtitle.copyWith(color: Colors.white70),
                 ),
               ],
-              const SizedBox(height: 28),
-              FilledButton(
-                onPressed: _begin,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  textStyle: const TextStyle(fontSize: 18),
-                ),
-                child: const Text('Calibrar e começar'),
+            ),
+          ),
+        ],
+      );
+}
+
+/// Escolha da atividade, em cartões tocáveis.
+///
+/// Em vez de uma lista suspensa: o adulto escolhe de pé, ao lado da criança,
+/// e três alvos grandes são mais rápidos que abrir um menu.
+class _TaskPicker extends StatelessWidget {
+  final Passage selected;
+  final ValueChanged<Passage> onChanged;
+
+  const _TaskPicker({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          for (final passage in passages)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _TaskOption(
+                passage: passage,
+                selected: passage.id == selected.id,
+                onTap: () => onChanged(passage),
               ),
-            ],
+            ),
+        ],
+      );
+}
+
+class _TaskOption extends StatelessWidget {
+  final Passage passage;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TaskOption({
+    required this.passage,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(Shapes.chipRadius + 2),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: selected ? Palette.brandSoft : Palette.background,
+              borderRadius: BorderRadius.circular(Shapes.chipRadius + 2),
+              border: Border.all(
+                color: selected ? Palette.brand : Colors.transparent,
+                width: 1.8,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  size: 21,
+                  color: selected ? Palette.brand : Palette.inkMuted,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    passage.title,
+                    style: AppType.body.copyWith(
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                      color: selected ? Palette.brandDeep : Palette.ink,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${passage.lines.length} linhas',
+                  style: AppType.body.copyWith(
+                    fontSize: 12.5,
+                    color: Palette.inkMuted,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );

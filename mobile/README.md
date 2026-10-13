@@ -100,6 +100,32 @@ de operação do próprio aplicativo**. Foi estendida até 3 graus. Enquanto a c
 não for medida no ETDD70 até ali, o que o aplicativo produz é captura, não
 classificação confiável.
 
+## Identidade visual
+
+Duas tipografias, e a separação não é estética:
+
+| Onde | Fonte | Por quê |
+|---|---|---|
+| Interface | Outfit | geométrica arredondada, o que uma criança reconhece como aplicativo |
+| Texto de leitura | Roboto | é o estímulo medido |
+
+**A área de leitura não recebe decoração.** Nem cor de fundo própria, nem
+moldura, nem ilustração ao lado, nem o cartão que todas as outras telas usam.
+Qualquer elemento visual perto do texto atrai o olhar e contamina o percurso
+que o pipeline vai analisar — e a comparação com o ETDD70, que foi gravado com
+texto nu sobre fundo liso, deixaria de valer. Todo o capricho visual do
+aplicativo para na borda daquele retângulo.
+
+As duas fontes vão embutidas no aplicativo. No caso do Roboto a razão é de
+medida: com a fonte variando entre aparelhos, o mesmo texto ocuparia larguras
+diferentes e a amplitude das sacadas entre palavras variaria junto.
+
+O mascote e a comemoração são desenhados em código (`CustomPainter` e formas),
+não exportados como imagem: acompanham cor e tamanho sem variantes, e o olho
+pisca — a única animação de personagem do aplicativo, sem custo de asset. Na
+calibração o mascote não aparece: movimento na periferia puxa o olhar, e ali
+isso seria medido como erro.
+
 ## Pré-visualização no navegador
 
 `lib/main_demo.dart` roda as telas reais com o pipeline real, trocando apenas a

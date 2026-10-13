@@ -39,6 +39,11 @@ dev_dependencies:
   flutter_lints: ^4.0.0
 
 flutter:
+  # Sem isto, a fonte de ícones do Material não é embarcada e todo ícone sai
+  # como caixa vazia. O `flutter create` acrescenta por padrão; este pubspec
+  # foi escrito à mão.
+  uses-material-design: true
+
   assets:
     - assets/model.json
 
@@ -51,8 +56,19 @@ flutter:
   #
   # Roboto é distribuído sob a licença Apache 2.0.
   fonts:
+    # O texto de leitura, e só ele. Ver a nota acima: é instrumento de medida.
     - family: Roboto
       fonts:
         - asset: fonts/Roboto-Regular.ttf
         - asset: fonts/Roboto-Medium.ttf
           weight: 500
+
+    # A interface à volta do estímulo: títulos, botões, rótulos. Outfit é uma
+    # geométrica de formas arredondadas, mais próxima do que uma criança de
+    # nove anos reconhece como "aplicativo" do que a fonte de sistema.
+    # Distribuída sob a SIL Open Font License (fonts/Outfit-LICENSE.txt).
+    - family: Outfit
+      fonts:
+        - asset: fonts/Outfit-Regular.ttf
+        - asset: fonts/Outfit-Bold.ttf
+          weight: 700

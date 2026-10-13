@@ -11,6 +11,9 @@ import 'dart:async';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
+import 'theme.dart';
+import 'widgets.dart';
+
 import '../gaze/gaze_source.dart';
 
 /// Alvos em coordenadas de fração da tela, e em graus de ângulo visual.
@@ -210,48 +213,69 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final target = calibrationTargets[_targetIndex];
 
     return Scaffold(
-      backgroundColor: const Color(0xFF102A43),
-      // O LayoutBuilder envolve o Stack, e não o contrário: um Positioned
-      // devolvido de dentro do builder teria o LayoutBuilder como pai, não o
-      // Stack, e o Flutter lançaria "Incorrect use of ParentDataWidget" a cada
-      // quadro -- o alvo não aparecia e a calibração seguia com o percurso
-      // errado.
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) => Stack(
-            children: [
-              Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    _message ?? 'Siga a bolinha com os olhos!',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
+      // Fundo escuro em gradiente: o alvo precisa de contraste máximo, e um
+      // campo uniforme tiraria do olho qualquer referência de profundidade.
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Palette.nightTop, Palette.nightBottom],
+          ),
+        ),
+        child: SafeArea(
+          // O LayoutBuilder envolve o Stack, e não o contrário: um Positioned
+          // devolvido de dentro do builder teria o LayoutBuilder como pai, não
+          // o Stack, e o Flutter lançaria "Incorrect use of ParentDataWidget"
+          // a cada quadro -- o alvo não aparecia e a calibração seguia com o
+          // percurso errado.
+          child: LayoutBuilder(
+            builder: (context, constraints) => Stack(
+              children: [
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 18, 28, 0),
+                    child: Column(
+                      children: [
+                        Text(
+                          _message ?? 'Siga a bolinha com os olhos',
+                          textAlign: TextAlign.center,
+                          style: AppType.title.copyWith(
+                            color: Colors.white,
+                            fontSize: 21,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Deixe a cabeça parada',
+                          style: AppType.body.copyWith(
+                            color: Colors.white54,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                // Centra o ponto no alvo: metade do diâmetro maior do círculo.
-                left: target.fractionX * constraints.maxWidth - 28,
-                top: target.fractionY * constraints.maxHeight - 28,
-                child: _TargetDot(active: _measuring),
-              ),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    '${_targetIndex + 1} de ${calibrationTargets.length}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 16),
+                Positioned(
+                  // Centra o ponto no alvo: metade do diâmetro maior.
+                  left: target.fractionX * constraints.maxWidth - 34,
+                  top: target.fractionY * constraints.maxHeight - 34,
+                  child: _TargetDot(active: _measuring),
+                ),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 28),
+                    child: StepDots(
+                      count: calibrationTargets.length,
+                      current: _targetIndex,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -259,29 +283,77 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 }
 
-/// A bolinha do alvo. Cresce quando está medindo, para dar à criança o sinal
-/// de que é agora que ela precisa olhar firme.
-class _TargetDot extends StatelessWidget {
+/// A bolinha do alvo.
+///
+/// Cresce e ganha um halo quando a medida começa, para dar à criança o sinal
+/// de que é agora que ela precisa olhar firme. O halo pulsa devagar: parado,
+/// o alvo some no fundo escuro; rápido, vira distração e o olho persegue a
+/// animação em vez de pousar no centro.
+class _TargetDot extends StatefulWidget {
   final bool active;
 
   const _TargetDot({required this.active});
 
   @override
-  Widget build(BuildContext context) => AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        width: active ? 56 : 36,
-        height: active ? 56 : 36,
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFFFC857) : const Color(0xFF7FB2D9),
-          shape: BoxShape.circle,
-          boxShadow: [
-            if (active)
-              const BoxShadow(
-                color: Color(0x55FFC857),
-                blurRadius: 24,
-                spreadRadius: 6,
+  State<_TargetDot> createState() => _TargetDotState();
+}
+
+class _TargetDotState extends State<_TargetDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = widget.active ? Palette.amber : const Color(0xFF8E9BDB);
+
+    return SizedBox(
+      width: 68,
+      height: 68,
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) => Stack(
+          alignment: Alignment.center,
+          children: [
+            // Halo.
+            Container(
+              width: widget.active ? 50 + _pulse.value * 18 : 34,
+              height: widget.active ? 50 + _pulse.value * 18 : 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colour.withValues(
+                  alpha: widget.active ? 0.22 - _pulse.value * 0.1 : 0.14,
+                ),
               ),
+            ),
+            // Miolo.
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOut,
+              width: widget.active ? 30 : 22,
+              height: widget.active ? 30 : 22,
+              decoration: BoxDecoration(
+                color: colour,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: colour.withValues(alpha: 0.55),
+                    blurRadius: widget.active ? 22 : 10,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
-      );
+      ),
+    );
+  }
 }

@@ -15,6 +15,9 @@ import 'dart:async';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
+import 'theme.dart';
+import 'widgets.dart';
+
 import '../activity/passages.dart';
 import '../gaze/gaze_source.dart';
 
@@ -132,41 +135,136 @@ class _ReadingScreenState extends State<ReadingScreen> {
     final passage = widget.passage;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFDF8F0),
+      backgroundColor: Palette.readingSurface,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                passage.title,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF243B53),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ReadingHeader(passage: passage, capturing: _capturing),
+
+            // A área do estímulo. Sem cartão, sem moldura, sem cor de fundo
+            // própria e sem nada ao lado: qualquer elemento visual aqui
+            // atrairia o olhar e contaminaria o percurso que o pipeline vai
+            // analisar. Todo o capricho visual do aplicativo para na borda
+            // deste retângulo, e é de propósito.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ReadingScreenBody.horizontalPadding,
                 ),
+                child: ReadingScreenBody(passage: passage),
               ),
-              const SizedBox(height: 8),
-              Text(
-                passage.instruction,
-                style: const TextStyle(fontSize: 17, color: Color(0xFF486581)),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_warning != null)
+                    NoticeCard(
+                      icon: Icons.visibility_outlined,
+                      tint: const Color(0xFF9A5B00),
+                      background: Palette.amberSoft,
+                      text: _warning!,
+                    ),
+                  if (_error != null)
+                    NoticeCard(
+                      icon: Icons.error_outline,
+                      tint: const Color(0xFFA32317),
+                      background: Palette.coralSoft,
+                      text: _error!,
+                    ),
+                  if (_warning != null || _error != null)
+                    const SizedBox(height: 14),
+                  PrimaryButton(
+                    label: _capturing ? 'Terminei de ler' : 'Começar',
+                    icon: _capturing
+                        ? Icons.check_rounded
+                        : Icons.play_arrow_rounded,
+                    colour: _capturing ? Palette.green : Palette.brand,
+                    onPressed: _capturing ? _finish : _start,
+                  ),
+                ],
               ),
-              const SizedBox(height: 24),
-              Expanded(child: ReadingScreenBody(passage: passage)),
-              if (_warning != null) _Banner(text: _warning!, warning: true),
-              if (_error != null) _Banner(text: _error!, warning: false),
-              const SizedBox(height: 16),
-              _ActionButton(
-                capturing: _capturing,
-                onPressed: _capturing ? _finish : _start,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+/// Cabeçalho da leitura: a tarefa, a instrução e o estado da captura.
+///
+/// Fica acima do texto e nunca ao lado dele, para não entrar no campo em que o
+/// olhar trabalha.
+class _ReadingHeader extends StatelessWidget {
+  final Passage passage;
+  final bool capturing;
+
+  const _ReadingHeader({required this.passage, required this.capturing});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(passage.title, style: AppType.title)),
+                _CaptureBadge(capturing: capturing),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(passage.instruction,
+                style: AppType.subtitle.copyWith(fontSize: 15)),
+          ],
+        ),
+      );
+}
+
+/// Selo de estado da captura.
+///
+/// O adulto precisa saber, à distância, se a atividade está gravando. A
+/// criança não precisa, e por isso o selo é discreto e fica no canto, longe
+/// do texto.
+class _CaptureBadge extends StatelessWidget {
+  final bool capturing;
+
+  const _CaptureBadge({required this.capturing});
+
+  @override
+  Widget build(BuildContext context) => AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: capturing ? Palette.greenSoft : Palette.background,
+          borderRadius: BorderRadius.circular(Shapes.chipRadius),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: capturing ? Palette.green : Palette.inkMuted,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 7),
+            Text(
+              capturing ? 'Gravando' : 'Pronto',
+              style: AppType.label.copyWith(
+                fontSize: 11.5,
+                color: capturing ? const Color(0xFF0E6B49) : Palette.inkMuted,
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 /// O texto a ler.
@@ -283,49 +381,5 @@ class ReadingScreenBody extends StatelessWidget {
             ],
           );
         },
-      );
-}
-
-class _Banner extends StatelessWidget {
-  final String text;
-  final bool warning;
-
-  const _Banner({required this.text, required this.warning});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(top: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: warning ? const Color(0xFFFFF3C4) : const Color(0xFFFFE3E3),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 17,
-            color: warning ? const Color(0xFF8D2B0B) : const Color(0xFF610404),
-          ),
-        ),
-      );
-}
-
-class _ActionButton extends StatelessWidget {
-  final bool capturing;
-  final VoidCallback onPressed;
-
-  const _ActionButton({required this.capturing, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) => FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor:
-              capturing ? const Color(0xFF2E7D32) : const Color(0xFF1565C0),
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-        ),
-        child: Text(capturing ? 'Terminei de ler' : 'Começar'),
       );
 }

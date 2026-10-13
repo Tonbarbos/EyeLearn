@@ -26,6 +26,8 @@ import 'src/gaze/synthetic_gaze_source.dart';
 import 'src/ui/calibration_screen.dart';
 import 'src/ui/finished_screen.dart';
 import 'src/ui/reading_screen.dart';
+import 'src/ui/theme.dart';
+import 'src/ui/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -202,159 +204,121 @@ class _IntroScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('EyeLearn — pré-visualização')),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Telas reais do aplicativo do aluno, com o pipeline real: descarte '
-                'de piscada, detecção de fixações e sacadas, extração das '
-                'características e inferência do modelo embarcado.',
-                style: TextStyle(fontSize: 16, height: 1.45),
-              ),
-              const SizedBox(height: 18),
-              const _Note(
-                colour: Color(0xFFFFF3C4),
-                textColour: Color(0xFF8D2B0B),
-                text:
-                    'A câmera está trocada por uma fonte sintética que emite pontos '
-                    'de rosto a 30 Hz. Não há permissão de câmera, arquivo de sessão '
-                    'nem compartilhamento: para isso, o aplicativo no Android.',
-              ),
-              if (artifact.metadata['training_data'] == 'synthetic') ...[
-                const SizedBox(height: 12),
-                const _Note(
-                  colour: Color(0xFFFFE3E3),
-                  textColour: Color(0xFF610404),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(Shapes.cardRadius + 4),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Palette.brand, Palette.brandDeep],
+                    ),
+                    boxShadow: Shapes.buttonShadow,
+                  ),
+                  child: Column(
+                    children: [
+                      const EyeMascot(size: 88, iris: Palette.amber),
+                      const SizedBox(height: 16),
+                      Text(
+                        'EyeLearn',
+                        style: AppType.display.copyWith(
+                          color: Colors.white,
+                          fontSize: 29,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius:
+                              BorderRadius.circular(Shapes.chipRadius),
+                        ),
+                        child: Text(
+                          'PRÉ-VISUALIZAÇÃO',
+                          style: AppType.label.copyWith(
+                            color: Colors.white,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('O que você vai ver', style: AppType.title),
+                      SizedBox(height: 10),
+                      NumberedStep(
+                        number: 1,
+                        title: 'Calibração',
+                        detail:
+                            'Cinco alvos. O olhar sintético segue cada um, e o '
+                            'ajuste por mínimos quadrados reconstrói o mapa da '
+                            'íris para a tela.',
+                      ),
+                      NumberedStep(
+                        number: 2,
+                        title: 'Leitura',
+                        detail:
+                            'Seis linhas. O percurso avança com fixações de cerca '
+                            'de 250 ms, quatro regressões e uma piscada no retorno '
+                            'de linha.',
+                      ),
+                      NumberedStep(
+                        number: 3,
+                        title: 'Fim',
+                        detail:
+                            'A criança vê que terminou, e nada mais. A qualidade '
+                            'da captura aparece só para o adulto.',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const NoticeCard(
+                  icon: Icons.videocam_off_outlined,
+                  tint: Color(0xFF9A5B00),
+                  background: Palette.amberSoft,
                   text:
-                      'O modelo embarcado foi treinado em dados sintéticos e não '
-                      'aprendeu nada sobre leitura. A pontuação que aparecer no fim '
-                      'não significa nada.',
+                      'A câmera está trocada por uma fonte sintética a 30 Hz. Sem '
+                      'permissão de câmera, arquivo de sessão nem '
+                      'compartilhamento: para isso, o aplicativo no Android.',
+                ),
+                if (artifact.metadata['training_data'] == 'synthetic') ...[
+                  const SizedBox(height: 10),
+                  const NoticeCard(
+                    icon: Icons.science_outlined,
+                    tint: Color(0xFFA32317),
+                    background: Palette.coralSoft,
+                    text:
+                        'O modelo foi treinado em dados sintéticos e não aprendeu '
+                        'nada sobre leitura. A pontuação do fim não significa nada.',
+                  ),
+                ],
+                const SizedBox(height: 22),
+                PrimaryButton(
+                  label: 'Começar a pré-visualização',
+                  icon: Icons.play_arrow_rounded,
+                  onPressed: onStart,
                 ),
               ],
-              const SizedBox(height: 28),
-              const Text(
-                'O que você vai ver',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 10),
-              const _Step(
-                number: '1',
-                title: 'Calibração',
-                detail:
-                    'Cinco alvos. O olhar sintético segue cada um, e o ajuste por '
-                    'mínimos quadrados reconstrói o mapa do deslocamento da íris '
-                    'para a tela.',
-              ),
-              const _Step(
-                number: '2',
-                title: 'Leitura',
-                detail:
-                    'Seis linhas de texto. O percurso avança pelas linhas com '
-                    'fixações de cerca de 250 ms, quatro regressões e uma piscada '
-                    'no retorno de linha.',
-              ),
-              const _Step(
-                number: '3',
-                title: 'Fim',
-                detail:
-                    'A criança vê que terminou, e nada mais. A qualidade da captura '
-                    'aparece só para o adulto.',
-              ),
-              const SizedBox(height: 28),
-              FilledButton(
-                onPressed: onStart,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  textStyle: const TextStyle(fontSize: 18),
-                ),
-                child: const Text('Começar a pré-visualização'),
-              ),
-            ],
+            ),
           ),
-        ),
-      );
-}
-
-class _Note extends StatelessWidget {
-  final Color colour;
-  final Color textColour;
-  final String text;
-
-  const _Note({
-    required this.colour,
-    required this.textColour,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: colour,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(fontSize: 14.5, height: 1.4, color: textColour),
-        ),
-      );
-}
-
-class _Step extends StatelessWidget {
-  final String number;
-  final String title;
-  final String detail;
-
-  const _Step({
-    required this.number,
-    required this.title,
-    required this.detail,
-  });
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 26,
-              height: 26,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Color(0xFF1565C0),
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                number,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(detail,
-                      style: const TextStyle(fontSize: 14, height: 1.35)),
-                ],
-              ),
-            ),
-          ],
         ),
       );
 }
