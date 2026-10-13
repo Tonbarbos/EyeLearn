@@ -20,7 +20,8 @@ Saída, na pasta ``--out``:
 
 Uso::
 
-    python scripts/run_etdd70.py --etdd70 CAMINHO --labels CAMINHO/labels.csv
+    python scripts/run_etdd70.py --etdd70 PASTA_DO_DATA_ZIP \
+        --labels dyslexia_class_label.csv
     python scripts/run_etdd70.py --synthetic      # ensaio, sem a base
 
 ``--synthetic`` roda o mesmo roteiro sobre a coorte sintética da suíte de
@@ -49,7 +50,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from eyelearn.data.etdd70 import load_dataset  # noqa: E402
+from eyelearn.data.etdd70 import load_etdd70  # noqa: E402
 from eyelearn.experiments.degradation_curve import run_degradation_curve  # noqa: E402
 from eyelearn.models.train import SCHOOL_PREVALENCE, compare_models  # noqa: E402
 from eyelearn.pipeline import PipelineConfig, build_dataset  # noqa: E402
@@ -240,7 +241,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--etdd70", type=Path, help="pasta da base extraída")
-    parser.add_argument("--labels", type=Path, help="CSV com subject,label")
+    parser.add_argument("--labels", type=Path,
+                        help="dyslexia_class_label.csv (procurado ao lado da base se omitido)")
     parser.add_argument("--synthetic", action="store_true",
                         help="ensaio na coorte sintética, sem a base")
     parser.add_argument("--out", type=Path, default=REPOSITORY_ROOT / "resultados")
@@ -253,8 +255,6 @@ def main() -> int:
 
     if args.synthetic == bool(args.etdd70):
         parser.error("use --etdd70 (com --labels) ou --synthetic")
-    if bool(args.etdd70) != bool(args.labels):
-        parser.error("--etdd70 e --labels andam juntos")
 
     if args.synthetic:
         sys.path.insert(0, str(REPOSITORY_ROOT / "tests"))
@@ -262,7 +262,7 @@ def main() -> int:
 
         traces, removed, provenance = make_cohort(n_per_group=12), 0, "sintético"
     else:
-        dataset = load_dataset(args.etdd70, labels=args.labels)
+        dataset = load_etdd70(args.etdd70, args.labels)
         kept = dataset.filter_by_quality()
         traces, removed, provenance = kept.traces, len(dataset) - len(kept), "ETDD70"
 

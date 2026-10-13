@@ -255,3 +255,79 @@ class TestQualityFilter:
         dataset = etdd70.load_dataset(tmp_path, labels={"S01": TYPICAL})
         with pytest.raises(ValueError, match="min_valid_ratio"):
             dataset.filter_by_quality(min_valid_ratio=1.5)
+
+
+class TestRealETDD70Format:
+    """O formato dos arquivos do Zenodo, reproduzido em miniatura.
+
+    Conferido nos arquivos reais: binocular, tempo em microssegundos, zero
+    como amostra perdida, nomes ``Subject_<id>_T<n>_<Tarefa>_raw.csv`` e a
+    pasta ``__MACOSX`` que o zip carrega.
+    """
+
+    HEADER = (
+        "time,gaze_x_left,gaze_y_left,gaze_x_right,gaze_y_right,"
+        "pupil_left,pupil_right,stimfile,subject_id\n"
+    )
+
+    def write(self, path, rows):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            f"{t},{xl},{yl},{xr},{yr},3.0,3.0,s7_stimuli_t4.jpg,1003\n"
+            for t, xl, yl, xr, yr in rows
+        ]
+        path.write_text(self.HEADER + "".join(lines))
+
+    @pytest.fixture
+    def root(self, tmp_path):
+        rows = [(1_000_000 + 4000 * i, 840, 525, 840, 525) for i in range(50)]
+        for subject in ("1003", "1016"):
+            for task in ("T1_Syllables", "T4_Meaningful_Text", "T5_Pseudo_Text"):
+                self.write(tmp_path / "data" / f"Subject_{subject}_{task}_raw.csv", rows)
+        # Metadado do macOS com o mesmo nome: não é CSV.
+        junk = tmp_path / "__MACOSX" / "data" / "._Subject_1003_T1_Syllables_raw.csv"
+        junk.parent.mkdir(parents=True)
+        junk.write_bytes(b"\x00\x05\x16\x07binario")
+        (tmp_path / "dyslexia_class_label.csv").write_text(
+            "subject_id,class_id,label\n1003,0,non-dyslexic\n1016,1,dyslexic\n"
+        )
+        return tmp_path
+
+    def test_loads_everything_and_skips_macos_junk(self, root):
+        dataset = etdd70.load_etdd70(root)
+        assert len(dataset) == 6
+        assert {t.task for t in dataset.traces} == {"syllables", "text", "pseudotext"}
+        assert dataset.labels_by_subject() == {"1003": TYPICAL, "1016": DYSLEXIC}
+
+    def test_time_is_microseconds(self, root):
+        trace = etdd70.load_etdd70(root).traces[0]
+        assert trace.sampling_rate == pytest.approx(250.0)
+
+    def test_screen_centre_is_zero_degrees(self, root):
+        trace = etdd70.load_etdd70(root).traces[0]
+        assert np.allclose(trace.x, 0.0, atol=1e-9)
+        assert np.allclose(trace.y, 0.0, atol=1e-9)
+
+    def test_zero_is_a_lost_sample_and_eyes_are_averaged(self, tmp_path):
+        path = tmp_path / "Subject_1003_T4_Meaningful_Text_raw.csv"
+        self.write(path, [
+            (0, 800, 525, 880, 525),   # dois olhos: média 840 = centro
+            (4000, 0, 0, 840, 525),    # esquerdo perdido: vale o direito
+            (8000, 840, 525, 0, 0),    # direito perdido: vale o esquerdo
+            (12000, 0, 0, 0, 0),       # os dois perdidos
+        ])
+        trace = etdd70.load_recording(
+            path, subject_id="1003", task="text",
+            columns=etdd70.ETDD70_COLUMNS, geometry=etdd70.ETDD70_GEOMETRY,
+        )
+        assert np.allclose(trace.x[:3], 0.0, atol=1e-9)
+        assert np.isnan(trace.x[3]) and np.isnan(trace.y[3])
+
+    def test_parse_identity_maps_task_names(self):
+        assert etdd70.parse_identity(Path("data/Subject_1003_T5_Pseudo_Text_raw.csv")) == (
+            "1003", "pseudotext",
+        )
+
+    def test_columns_for_the_other_eye_go_together(self):
+        with pytest.raises(ValueError):
+            etdd70.ColumnMap(x_other="gaze_x_right")

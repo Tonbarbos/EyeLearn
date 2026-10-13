@@ -36,7 +36,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from eyelearn.data.etdd70 import load_dataset  # noqa: E402
+from eyelearn.data.etdd70 import load_etdd70  # noqa: E402
 from eyelearn.export.artifact import export_artifact  # noqa: E402
 from eyelearn.export.golden import build_fixture, save_fixture  # noqa: E402
 from eyelearn.models.train import build_models, cross_validate  # noqa: E402
@@ -98,7 +98,7 @@ def main() -> int:
         parser.error("--etdd70 e --labels andam juntos")
 
     if args.etdd70:
-        dataset = load_dataset(args.etdd70, labels=args.labels)
+        dataset = load_etdd70(args.etdd70, args.labels)
         traces = dataset.filter_by_quality().traces
         provenance = "etdd70"
     else:

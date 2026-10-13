@@ -19,7 +19,10 @@ mutmut-stats.json
 
 # Bases de dados não são redistribuídas no repositório. Baixe o ETDD70 do
 # Zenodo e aponte o caminho na configuração.
-data/
+#
+# Só na raiz: sem a barra inicial, a regra também escondia o pacote
+# eyelearn/data/, que ficou fora do repositório até ser notado.
+/data/
 *.edf
 
 # Dart e Flutter
