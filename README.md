@@ -22,7 +22,17 @@ Não coletamos dados de crianças. O treino e a avaliação usam apenas bases p�
 | Base | Conteúdo | Acesso |
 |---|---|---|
 | [ETDD70](https://doi.org/10.5281/zenodo.13332134) | 70 estudantes de 9–10 anos (35 com dislexia), 3 tarefas de leitura | Zenodo, aberta para pesquisa |
-| [Rojas-Líbano et al. (2019)](https://doi.org/10.6084/m9.figshare.7218725.v3) | 28 crianças com TDAH + 22 controles, EyeLink 1000 a 1 kHz | Figshare, CC BY 4.0 |
+
+É a única base de treino e avaliação. **O experimento ainda não rodou sobre
+ela**: o modelo embarcado hoje foi treinado em dados sintéticos, e o aplicativo
+e o painel avisam disso. O que é treinado, o que é comparado e como rodar está
+em [`relatorio/BASES-DE-DADOS.md`](relatorio/BASES-DE-DADOS.md); o roteiro
+completo é um comando só:
+
+```bash
+python scripts/run_etdd70.py --etdd70 CAMINHO --labels CAMINHO/labels.csv
+python scripts/run_etdd70.py --synthetic     # ensaio sem a base; números sem valor
+```
 
 ## Onde cada parte roda
 
