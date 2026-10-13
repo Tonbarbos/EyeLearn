@@ -11,7 +11,7 @@ import 'dart:async';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
-import '../gaze/gaze_channel.dart';
+import '../gaze/gaze_source.dart';
 
 /// Alvos em coordenadas de fração da tela, e em graus de ângulo visual.
 ///
@@ -52,15 +52,24 @@ class CalibrationScreen extends StatefulWidget {
   /// Meia-altura da tela em graus.
   static const double degreesPerHalfHeight = 24.0;
 
-  final GazeChannel channel;
+  final GazeSource channel;
 
   /// Chamada com a calibração ajustada, quando ela é aceitável.
   final void Function(GazeCalibration) onCalibrated;
+
+  /// Chamada a cada alvo apresentado.
+  ///
+  /// Existe para que uma origem de olhar que não seja a câmera saiba para onde
+  /// a criança deveria estar olhando: é o que fecha o laço na
+  /// pré-visualização de `main_demo.dart`. No aplicativo instalado fica nula --
+  /// a criança olha para o alvo porque o vê, não porque alguém avisou.
+  final void Function(CalibrationTarget)? onTargetShown;
 
   const CalibrationScreen({
     super.key,
     required this.channel,
     required this.onCalibrated,
+    this.onTargetShown,
   });
 
   @override
@@ -105,6 +114,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   void _scheduleTarget() {
     _measurements.clear();
     setState(() => _measuring = false);
+    widget.onTargetShown?.call(calibrationTargets[_targetIndex]);
 
     _timer = Timer(targetSettleTime, () {
       setState(() => _measuring = true);
@@ -146,12 +156,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _samples.add(
       CalibrationSample(
         // Fração da tela para graus, com a origem no centro.
-        targetX:
-            (target.fractionX - 0.5) *
+        targetX: (target.fractionX - 0.5) *
             2 *
             CalibrationScreen.degreesPerHalfWidth,
-        targetY:
-            (target.fractionY - 0.5) *
+        targetY: (target.fractionY - 0.5) *
             2 *
             CalibrationScreen.degreesPerHalfHeight,
         offsetX: sumX / _measurements.length,
@@ -203,42 +211,48 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF102A43),
+      // O LayoutBuilder envolve o Stack, e não o contrário: um Positioned
+      // devolvido de dentro do builder teria o LayoutBuilder como pai, não o
+      // Stack, e o Flutter lançaria "Incorrect use of ParentDataWidget" a cada
+      // quadro -- o alvo não aparecia e a calibração seguia com o percurso
+      // errado.
       body: SafeArea(
-        child: Stack(
-          children: [
-            Align(
-              alignment: Alignment.topCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  _message ?? 'Siga a bolinha com os olhos!',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Stack(
+            children: [
+              Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    _message ?? 'Siga a bolinha com os olhos!',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
-            ),
-            LayoutBuilder(
-              builder: (context, constraints) => Positioned(
+              Positioned(
+                // Centra o ponto no alvo: metade do diâmetro maior do círculo.
                 left: target.fractionX * constraints.maxWidth - 28,
                 top: target.fractionY * constraints.maxHeight - 28,
                 child: _TargetDot(active: _measuring),
               ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  '${_targetIndex + 1} de ${calibrationTargets.length}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 16),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    '${_targetIndex + 1} de ${calibrationTargets.length}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 16),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -254,20 +268,20 @@ class _TargetDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-    duration: const Duration(milliseconds: 250),
-    width: active ? 56 : 36,
-    height: active ? 56 : 36,
-    decoration: BoxDecoration(
-      color: active ? const Color(0xFFFFC857) : const Color(0xFF7FB2D9),
-      shape: BoxShape.circle,
-      boxShadow: [
-        if (active)
-          const BoxShadow(
-            color: Color(0x55FFC857),
-            blurRadius: 24,
-            spreadRadius: 6,
-          ),
-      ],
-    ),
-  );
+        duration: const Duration(milliseconds: 250),
+        width: active ? 56 : 36,
+        height: active ? 56 : 36,
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFFFC857) : const Color(0xFF7FB2D9),
+          shape: BoxShape.circle,
+          boxShadow: [
+            if (active)
+              const BoxShadow(
+                color: Color(0x55FFC857),
+                blurRadius: 24,
+                spreadRadius: 6,
+              ),
+          ],
+        ),
+      );
 }

@@ -18,28 +18,19 @@ import 'dart:async';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/services.dart';
 
+import 'gaze_source.dart';
+
 /// Nome do canal. Tem de coincidir com o do lado nativo.
 const String gazeChannelName = 'br.edu.ucl.eyelearn/gaze';
 
-/// Erro na captura, vindo do lado nativo ou da leitura dos quadros.
-class GazeCaptureError implements Exception {
-  final String message;
-  final Object? cause;
-
-  const GazeCaptureError(this.message, [this.cause]);
-
-  @override
-  String toString() => 'GazeCaptureError: $message';
-}
-
-/// Acesso à captura de pontos do rosto.
-class GazeChannel {
+/// Captura pelo canal nativo. Só existe no Android.
+class GazeChannel implements GazeSource {
   final MethodChannel _methods;
   final EventChannel _events;
 
   GazeChannel({MethodChannel? methods, EventChannel? events})
-    : _methods = methods ?? const MethodChannel(gazeChannelName),
-      _events = events ?? const EventChannel('$gazeChannelName/frames');
+      : _methods = methods ?? const MethodChannel(gazeChannelName),
+        _events = events ?? const EventChannel('$gazeChannelName/frames');
 
   /// Liga a câmera e o modelo.
   ///
@@ -47,6 +38,7 @@ class GazeChannel {
   /// a permissão foi negada ou quando o modelo não carrega. Nos três casos o
   /// aplicativo não tem como seguir, e insistir mostraria uma tela de leitura
   /// que não está medindo nada.
+  @override
   Future<void> start() async {
     try {
       await _methods.invokeMethod<void>('start');
@@ -69,6 +61,7 @@ class GazeChannel {
   /// Chamada mesmo quando a atividade é abandonada no meio: deixar a câmera
   /// ligada depois de sair da tela de leitura é, além de desperdício de
   /// bateria, uma captura que ninguém pediu.
+  @override
   Future<void> stop() async {
     try {
       await _methods.invokeMethod<void>('stop');
@@ -85,15 +78,13 @@ class GazeChannel {
   /// Quadros malformados são descartados com aviso em vez de derrubarem o
   /// fluxo: num aparelho real um quadro ocasional vem incompleto, e perder a
   /// gravação inteira por causa dele seria pior.
-  Stream<FaceFrame> frames() => _events
-      .receiveBroadcastStream()
-      .map((payload) {
+  @override
+  Stream<FaceFrame> frames() => _events.receiveBroadcastStream().map((payload) {
         if (payload is! Map) {
           throw GazeCaptureError('quadro em formato inesperado: $payload');
         }
         return FaceFrame.fromChannel(payload);
-      })
-      .handleError((Object error) {
+      }).handleError((Object error) {
         // Deixa passar: o assinante decide se conta as perdas.
       }, test: (error) => error is FormatException);
 }

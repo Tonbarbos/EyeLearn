@@ -41,3 +41,18 @@ dev_dependencies:
 flutter:
   assets:
     - assets/model.json
+
+  # O Roboto vai embutido, e não deixado ao padrão da plataforma, por uma razão
+  # de medida: o mesmo texto tem de ocupar a mesma largura em todo aparelho.
+  # Com a fonte variando, a amplitude das sacadas entre palavras variaria
+  # junto, e as características deixariam de ser comparáveis entre
+  # participantes que usaram celulares diferentes. É também o que faz a
+  # pré-visualização no navegador renderizar igual ao aparelho.
+  #
+  # Roboto é distribuído sob a licença Apache 2.0.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: fonts/Roboto-Regular.ttf
+        - asset: fonts/Roboto-Medium.ttf
+          weight: 500

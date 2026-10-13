@@ -16,15 +16,23 @@ import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
 import '../activity/passages.dart';
-import '../gaze/gaze_channel.dart';
+import '../gaze/gaze_source.dart';
 
 class ReadingScreen extends StatefulWidget {
-  final GazeChannel channel;
+  final GazeSource channel;
   final GazeCalibration calibration;
   final Passage passage;
 
   /// Chamada ao final, com o percurso e a qualidade da captura.
   final void Function(GazeTrace trace, RecordingQuality quality) onFinished;
+
+  /// Chamada quando a captura começa.
+  ///
+  /// Existe para que uma origem de olhar que não seja a câmera possa iniciar o
+  /// seu roteiro no mesmo instante em que a gravação começa -- é o que a
+  /// pré-visualização de `main_demo.dart` usa. No aplicativo instalado fica
+  /// nula: a câmera já está emitindo, e quem move os olhos é a criança.
+  final VoidCallback? onStarted;
 
   const ReadingScreen({
     super.key,
@@ -32,6 +40,7 @@ class ReadingScreen extends StatefulWidget {
     required this.calibration,
     required this.passage,
     required this.onFinished,
+    this.onStarted,
   });
 
   @override
@@ -83,6 +92,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
     _recorder.reset();
     _subscription = widget.channel.frames().listen(_onFrame);
     setState(() => _capturing = true);
+    widget.onStarted?.call();
   }
 
   void _onFrame(FaceFrame frame) {
@@ -143,7 +153,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                 style: const TextStyle(fontSize: 17, color: Color(0xFF486581)),
               ),
               const SizedBox(height: 24),
-              Expanded(child: _PassageBody(passage: passage)),
+              Expanded(child: ReadingScreenBody(passage: passage)),
               if (_warning != null) _Banner(text: _warning!, warning: true),
               if (_error != null) _Banner(text: _error!, warning: false),
               const SizedBox(height: 16),
@@ -161,35 +171,119 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
 /// O texto a ler.
 ///
-/// Linhas com espaçamento generoso e fonte grande: o percurso do olhar só é
-/// separável em linhas se as linhas estiverem mais distantes que o erro da
-/// estimativa, que é da ordem de 2 a 4 graus. Texto apertado produziria um
-/// percurso em que as linhas se misturam, e o retorno de linha -- uma das
-/// características medidas -- deixaria de ser detectável.
-class _PassageBody extends StatelessWidget {
+/// Linhas com espaçamento generoso: o percurso do olhar só é separável em
+/// linhas se elas estiverem mais distantes que o erro da estimativa. Texto
+/// apertado produziria um percurso em que as linhas se misturam, e o retorno
+/// de linha -- uma das características medidas -- deixaria de ser detectável.
+///
+/// **Cada linha ocupa exatamente uma linha na tela**, e a fonte é escalada uma
+/// única vez para que a linha mais larga caiba. Deixar o Flutter quebrar
+/// sozinho era o defeito que a primeira pré-visualização gravada expôs: na
+/// largura de um celular em retrato, cada uma das seis linhas do texto virava
+/// duas, e o modelo receberia o dobro de retornos de linha.
+///
+/// A escala é uma só para todas as linhas. Escalar linha a linha, com um
+/// `FittedBox` por linha, daria tamanhos diferentes na mesma página e mudaria
+/// a amplitude das sacadas entre uma linha e outra -- justamente uma das
+/// características medidas.
+///
+/// Público, e não privado, para que o teste possa renderizá-lo sem câmera,
+/// sem calibração e sem origem de olhar.
+class ReadingScreenBody extends StatelessWidget {
+  /// Estilo das linhas, antes da escala.
+  ///
+  /// Exposto para que o teste meça com exatamente o mesmo estilo que a tela
+  /// usa: medir com outro estilo validaria uma tela que não existe.
+  ///
+  /// A família é fixada em Roboto, e não deixada ao padrão da plataforma, por
+  /// uma razão de medida: o mesmo texto tem de ocupar a mesma largura em todo
+  /// aparelho. Com a fonte variando, a amplitude das sacadas entre palavras
+  /// variaria junto, e as características deixariam de ser comparáveis entre
+  /// participantes que usaram celulares diferentes.
+  static const TextStyle lineStyle = TextStyle(
+    fontFamily: 'Roboto',
+    fontSize: 26,
+    height: 1.4,
+    color: Color(0xFF102A43),
+  );
+
+  /// Margem lateral da tela de leitura, de cada lado.
+  static const double horizontalPadding = 20.0;
+
+  /// Folga deixada na largura, como fração.
+  ///
+  /// Sem folga, a escala faz a linha mais larga medir exatamente a largura
+  /// disponível -- e o arredondamento de subpixel do rasterizador come o
+  /// último glifo. Foi o que a pré-visualização mostrou: "muito cedo." virava
+  /// "muito cedc". Dois por cento bastam, e o texto também não deve encostar
+  /// na borda.
+  static const double widthMargin = 0.98;
+
+  /// Piso de legibilidade, em pixels lógicos.
+  ///
+  /// Abaixo disto o texto deixa de ser confortável para uma criança de nove ou
+  /// dez anos, e encolher mais para fazer caber seria resolver um problema de
+  /// conteúdo com tipografia. Uma tarefa cujas linhas não caibam neste piso
+  /// precisa de linhas mais curtas, e é o que `test/passages_test.dart` cobra.
+  static const double minimumFontSize = 17.0;
+
   final Passage passage;
 
-  const _PassageBody({required this.passage});
+  const ReadingScreenBody({super.key, required this.passage});
+
+  /// Largura da linha mais larga da tarefa, no tamanho de base.
+  static double widestLine(Passage passage) {
+    var widest = 0.0;
+    for (final line in passage.lines) {
+      final painter = TextPainter(
+        text: TextSpan(text: line, style: lineStyle),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      if (painter.width > widest) widest = painter.width;
+    }
+    return widest;
+  }
+
+  /// Tamanho de fonte que faz a tarefa inteira caber na largura informada.
+  ///
+  /// Nunca aumenta: o tamanho de base é o desejado, e a escala só serve para
+  /// caber. Nunca desce abaixo de [minimumFontSize] -- se nem assim couber, a
+  /// linha é cortada, de forma visível, em vez de virar duas em silêncio.
+  static double fittedFontSize(Passage passage, double availableWidth) {
+    final widest = widestLine(passage);
+    if (widest <= 0 || availableWidth <= 0) return lineStyle.fontSize!;
+
+    final scaled =
+        lineStyle.fontSize! * (availableWidth * widthMargin / widest);
+    return scaled.clamp(minimumFontSize, lineStyle.fontSize!);
+  }
 
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      for (final line in passage.lines)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Text(
-            line,
-            style: const TextStyle(
-              fontSize: 26,
-              height: 1.4,
-              color: Color(0xFF102A43),
-            ),
-          ),
-        ),
-    ],
-  );
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final fontSize = fittedFontSize(passage, constraints.maxWidth);
+          final style = lineStyle.copyWith(fontSize: fontSize);
+
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final line in passage.lines)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: Text(
+                    line,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.clip,
+                    style: style,
+                  ),
+                ),
+            ],
+          );
+        },
+      );
 }
 
 class _Banner extends StatelessWidget {
@@ -200,21 +294,21 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(top: 12),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-    decoration: BoxDecoration(
-      color: warning ? const Color(0xFFFFF3C4) : const Color(0xFFFFE3E3),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Text(
-      text,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        fontSize: 17,
-        color: warning ? const Color(0xFF8D2B0B) : const Color(0xFF610404),
-      ),
-    ),
-  );
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: warning ? const Color(0xFFFFF3C4) : const Color(0xFFFFE3E3),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 17,
+            color: warning ? const Color(0xFF8D2B0B) : const Color(0xFF610404),
+          ),
+        ),
+      );
 }
 
 class _ActionButton extends StatelessWidget {
@@ -225,14 +319,13 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FilledButton(
-    onPressed: onPressed,
-    style: FilledButton.styleFrom(
-      backgroundColor: capturing
-          ? const Color(0xFF2E7D32)
-          : const Color(0xFF1565C0),
-      padding: const EdgeInsets.symmetric(vertical: 18),
-      textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-    ),
-    child: Text(capturing ? 'Terminei de ler' : 'Começar'),
-  );
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor:
+              capturing ? const Color(0xFF2E7D32) : const Color(0xFF1565C0),
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+        ),
+        child: Text(capturing ? 'Terminei de ler' : 'Começar'),
+      );
 }

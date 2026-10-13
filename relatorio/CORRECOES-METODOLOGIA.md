@@ -203,7 +203,41 @@ Encontrou dois defeitos reais na primeira execução:
 > mesmos valores. É a única forma de detectar divergência entre as duas, que de
 > outro modo se manifestaria apenas como predição diferente, sem erro.
 
-## 9. Saliency4ASD aparece como base secundária mas não tem uso definido
+## 9. O que a pré-visualização gravada revelou
+
+Compilar o aplicativo para web e gravar o fluxo encontrou dois defeitos que
+nenhum teste até então pegava, e ambos afetariam a medida:
+
+**A tela de calibração lançava exceção a cada quadro.** Um `Positioned`
+devolvido de dentro de um `LayoutBuilder` tem o builder como pai, não o
+`Stack`: o Flutter rejeitava o posicionamento e o alvo não aparecia onde
+deveria. A criança seguiria uma bolinha fora de lugar, e o mapa ajustado pela
+calibração estaria errado — com tudo o que vem depois herdando o erro, sem
+nada acusar.
+
+**As linhas do texto quebravam na largura do celular.** `passages.dart` fixa a
+quebra de linha de propósito, porque o retorno de linha é uma das
+características medidas. Em retrato, cada uma das seis linhas virava duas: o
+modelo receberia **doze** retornos de linha onde espera cinco. A tela agora
+escala a fonte uma única vez para que a linha mais larga caiba, com folga, e
+`test/passages_test.dart` cobra a invariante medindo a largura real do texto
+na fonte que o aparelho usa.
+
+A fonte passou a ser embutida no aplicativo em vez de herdada da plataforma.
+A razão é de medida, não de estética: com a fonte variando entre aparelhos, o
+mesmo texto ocuparia larguras diferentes, e a amplitude das sacadas entre
+palavras variaria junto — as características deixariam de ser comparáveis
+entre participantes que usaram celulares diferentes.
+
+**Ressalva que fica em aberto.** A fonte escala conforme a largura da tela:
+18,8 px num aparelho de 360 px, 21,8 px num de 412. A mesma tarefa no mesmo
+aluno, em celulares diferentes, produz amplitudes de sacada diferentes em
+graus. A comparação intraturma de `eyelearn/session.py` é por tarefa e
+normalmente dentro de uma mesma turma, o que atenua; mas a sessão deveria
+registrar o tamanho de fonte renderizado para que o painel possa sinalizar
+gravações não comparáveis. Não está implementado.
+
+## 10. Saliency4ASD aparece como base secundária mas não tem uso definido
 
 A seção 4.1 lista a base, e a 4.3 não diz o que fazer com ela. Como está, é uma
 base citada sem experimento. Duas saídas: ou definir o experimento (treinar no

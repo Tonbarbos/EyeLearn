@@ -29,3 +29,10 @@ data/
 build/
 # O modelo do MediaPipe não é redistribuído: baixe-o conforme mobile/README.md.
 mobile/eyelearn_app/android/app/src/main/assets/*.task
+# Gerados pelo `flutter create`: o andaime de plataforma é recriado por quem
+# compila, e `local.properties` guarda o caminho do SDK da máquina.
+mobile/eyelearn_app/web/
+mobile/eyelearn_app/android/local.properties
+mobile/eyelearn_app/android/.gradle/
+mobile/eyelearn_app/android/app/src/main/java/
+*.iml

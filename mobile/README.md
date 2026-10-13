@@ -100,13 +100,31 @@ de operação do próprio aplicativo**. Foi estendida até 3 graus. Enquanto a c
 não for medida no ETDD70 até ali, o que o aplicativo produz é captura, não
 classificação confiável.
 
+## Pré-visualização no navegador
+
+`lib/main_demo.dart` roda as telas reais com o pipeline real, trocando apenas a
+câmera por uma fonte sintética que emite pontos de rosto a 30 Hz. Serve para
+ver a interface sem Android, sem câmera e sem o modelo do MediaPipe.
+
+```bash
+cd mobile/eyelearn_app
+flutter create --platforms=web .      # só na primeira vez
+flutter pub get
+flutter run -d chrome -t lib/main_demo.dart
+```
+
+Foi assim que apareceram dois defeitos que nenhum teste pegava: a calibração
+lançava exceção a cada quadro por um `Positioned` dentro de `LayoutBuilder`, e
+as linhas do texto quebravam na largura do celular, dobrando a contagem de
+retornos de linha que o modelo receberia. Ambos corrigidos, com testes.
+
 ## Rodando
 
 ```bash
 # Núcleo: roda em qualquer máquina
 cd mobile/eyelearn_core
 dart pub get
-dart test                       # 136 testes, inclui o diferencial
+dart test                       # 139 testes, inclui o diferencial
 dart analyze
 
 # Regerar os ativos embarcados (do lado Python)
@@ -138,8 +156,12 @@ Antes do primeiro `flutter run`:
 
 ## O que esta sessão não conseguiu verificar
 
-O SDK do Flutter não está disponível no ambiente em que o código foi escrito.
-`eyelearn_core` foi analisado e testado de verdade; `eyelearn_app` e o Kotlin
-**nunca foram compilados**. Espere ajustes de assinatura de API na primeira
-compilação — sobretudo em `camera`, `share_plus` e nas versões do MediaPipe e do
-CameraX.
+O aplicativo **compila** (`flutter build web`) e `flutter analyze` passa sem
+observações; `flutter test` roda 16 testes de widget. A pré-visualização no
+navegador foi executada e gravada de ponta a ponta.
+
+O que continua sem verificação é o caminho Android: `GazePlugin.kt`, o
+`AndroidManifest.xml` e o `build.gradle.kts` **nunca foram compilados**, porque
+o ambiente não tem o SDK do Android. Espere ajustes nas versões do MediaPipe
+Tasks Vision e do CameraX, e na conversão de quadro (`image.toBitmap()` exige
+CameraX recente). O iOS não está implementado.

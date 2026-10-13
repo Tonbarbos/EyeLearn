@@ -90,6 +90,6 @@ const List<Passage> passages = [
 /// existe indica sessão corrompida, e seguir com a primeira da lista gravaria
 /// a tarefa errada no arquivo.
 Passage passageById(String id) => passages.firstWhere(
-  (passage) => passage.id == id,
-  orElse: () => throw ArgumentError('tarefa desconhecida: $id'),
-);
+      (passage) => passage.id == id,
+      orElse: () => throw ArgumentError('tarefa desconhecida: $id'),
+    );

@@ -33,4 +33,5 @@ export 'src/preprocess.dart'
         validSampleRatio,
         velocity;
 export 'src/session.dart';
+export 'src/synthetic_face.dart';
 export 'src/trace.dart';

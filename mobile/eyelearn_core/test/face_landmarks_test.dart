@@ -9,63 +9,25 @@ library;
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:test/test.dart';
 
-/// Monta um quadro com a íris deslocada de uma fração conhecida da largura do
-/// olho.
+/// Atalho para [syntheticFaceFrame], com os nomes que estes testes usam.
 ///
-/// Os dois olhos recebem o mesmo deslocamento, que é o caso de alguém olhando
-/// para um ponto distante o bastante para que a convergência seja desprezível.
+/// Delega à função da biblioteca em vez de montar o rosto de novo: duas
+/// construções do mesmo rosto poderiam divergir, e os testes passariam a
+/// verificar uma geometria que o aplicativo não usa.
 FaceFrame faceWith({
   required double offsetFraction,
   required double verticalFraction,
-  double eyeWidth = 0.08,
-  double opennessFraction = 0.3,
+  double eyeWidth = defaultEyeWidth,
+  double opennessFraction = defaultOpenness,
   double timestamp = 0.0,
-}) {
-  final points = List<Landmark>.filled(
-    FaceMeshIndices.expectedCount,
-    const Landmark(0.5, 0.5, 0.0),
-  );
-
-  void placeEye({
-    required int iris,
-    required int outer,
-    required int inner,
-    required int top,
-    required int bottom,
-    required double centreX,
-  }) {
-    const centreY = 0.45;
-    points[outer] = Landmark(centreX - eyeWidth / 2, centreY, 0.0);
-    points[inner] = Landmark(centreX + eyeWidth / 2, centreY, 0.0);
-    points[iris] = Landmark(
-      centreX + offsetFraction * eyeWidth,
-      centreY + verticalFraction * eyeWidth,
-      0.0,
+}) =>
+    syntheticFaceFrame(
+      offsetX: offsetFraction,
+      offsetY: verticalFraction,
+      eyeWidth: eyeWidth,
+      opennessFraction: opennessFraction,
+      timestamp: timestamp,
     );
-    final halfOpen = opennessFraction * eyeWidth / 2;
-    points[top] = Landmark(centreX, centreY - halfOpen, 0.0);
-    points[bottom] = Landmark(centreX, centreY + halfOpen, 0.0);
-  }
-
-  placeEye(
-    iris: FaceMeshIndices.leftIrisCentre,
-    outer: FaceMeshIndices.leftEyeOuter,
-    inner: FaceMeshIndices.leftEyeInner,
-    top: FaceMeshIndices.leftEyeTop,
-    bottom: FaceMeshIndices.leftEyeBottom,
-    centreX: 0.4,
-  );
-  placeEye(
-    iris: FaceMeshIndices.rightIrisCentre,
-    outer: FaceMeshIndices.rightEyeOuter,
-    inner: FaceMeshIndices.rightEyeInner,
-    top: FaceMeshIndices.rightEyeTop,
-    bottom: FaceMeshIndices.rightEyeBottom,
-    centreX: 0.6,
-  );
-
-  return FaceFrame(timestamp: timestamp, landmarks: points);
-}
 
 void main() {
   group('deslocamento da íris', () {
@@ -159,14 +121,30 @@ void main() {
     test('devolve nulo quando a geometria é degenerada', () {
       // Rosto de perfil ou detecção falhada: a largura do olho vai a zero e a
       // divisão daria infinito, que contaminaria o percurso inteiro.
-      final collapsed = FaceFrame(
-        timestamp: 0.0,
-        landmarks: List<Landmark>.filled(
-          FaceMeshIndices.expectedCount,
-          const Landmark(0.5, 0.5, 0.0),
-        ),
+      expect(irisOffset(faceAbsentFrame()), isNull);
+    });
+
+    test('o quadro sem rosto tem a contagem de pontos do modelo', () {
+      // Ele atravessa o canal como qualquer outro quadro, e seria recusado na
+      // leitura se tivesse pontos a menos.
+      expect(
+        faceAbsentFrame().landmarks.length,
+        equals(FaceMeshIndices.expectedCount),
       );
-      expect(irisOffset(collapsed), isNull);
+    });
+
+    test('o gerador recusa largura de olho não positiva', () {
+      expect(
+        () => syntheticFaceFrame(offsetX: 0, offsetY: 0, eyeWidth: 0),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('a abertura padrão fica acima do piso de piscada', () {
+      // É o que faz os quadros sintéticos passarem pelo acumulador sem serem
+      // descartados como piscada.
+      final offset = irisOffset(syntheticFaceFrame(offsetX: 0, offsetY: 0));
+      expect(offset!.openness, greaterThan(minimumOpenness));
     });
   });
 
