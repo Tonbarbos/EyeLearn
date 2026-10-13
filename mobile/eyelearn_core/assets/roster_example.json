@@ -1,0 +1,36 @@
+{
+  "roster": {
+    "format": "eyelearn-turma",
+    "format_version": 1,
+    "class_name": "5º A (exemplo)",
+    "exported_at": "2026-10-13T16:15:01+00:00",
+    "students": [
+      {
+        "code": "BXQPN5",
+        "display_name": "Ana P.",
+        "pin_hash": "pbkdf2-sha256$20000$c65aed9064515dd235a6a64da587294f$af1cec933b7fff0cd92f8e11254c7babdcd2e5de434f3769324f902ca2498fdf"
+      },
+      {
+        "code": "23YKXG",
+        "display_name": "Ana S.",
+        "pin_hash": "pbkdf2-sha256$20000$f13408076462d1aa6fcb3c4a51470ec3$bb854fd4bf5a8d8639df9c6c7a0a932ea93cf092358f734e3296981cbcc28c0c"
+      },
+      {
+        "code": "HFCF7Q",
+        "display_name": "Bruno L.",
+        "pin_hash": "pbkdf2-sha256$20000$241cf484004542886561b6baff07d243$0a3fc769fbafacb1da336b2af48646e0d125481396559c9de30733fa039e2bc7"
+      },
+      {
+        "code": "B9YWVT",
+        "display_name": "João S.",
+        "pin_hash": "pbkdf2-sha256$20000$2739e280e4d0595ceba3e88222b9327f$7211358603921ced3fc90239b10669d66153ecbd3f0879165b0da6d1d92aace5"
+      }
+    ]
+  },
+  "pins_for_tests": {
+    "23YKXG": "2580",
+    "HFCF7Q": "9031",
+    "B9YWVT": "4719",
+    "BXQPN5": "0862"
+  }
+}

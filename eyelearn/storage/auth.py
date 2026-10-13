@@ -1,7 +1,13 @@
 """Credenciais: senha do professor e PIN do aluno.
 
-Nada aqui guarda segredo em texto claro. Senha e PIN viram um hash scrypt com
-sal próprio, e a verificação compara em tempo constante.
+Nada aqui guarda segredo em texto claro. Senha e PIN viram hash com sal
+próprio, e a verificação compara em tempo constante.
+
+São dois esquemas, por causa de onde cada um é verificado. A senha do professor
+só é conferida no computador, e usa scrypt. O PIN do aluno é conferido **no
+celular**, offline, contra a lista da turma exportada do painel -- e o Dart não
+tem scrypt na biblioteca padrão. O PIN usa PBKDF2-HMAC-SHA256, que o Python tem
+em ``hashlib`` e o Dart implementa em poucas linhas sobre HMAC.
 
 **O PIN de quatro dígitos não é protegido pelo hash.** São dez mil
 combinações: quem tiver o arquivo do banco testa todas em segundos, com
@@ -32,6 +38,13 @@ KEY_BYTES = 32
 #: mudarem, hashes antigos continuam verificáveis pelo prefixo.
 SCHEME = "scrypt-v1"
 
+#: Esquema do PIN. As iterações ficam no próprio hash, e o lado Dart lê de lá.
+#: Vinte mil é pouco para senha e é de propósito: o PIN tem dez mil valores, e
+#: nenhuma contagem de iterações o protege de quem tem o arquivo (ver acima).
+#: O custo só precisa ser tolerável no celular mais lento da escola.
+PIN_SCHEME = "pbkdf2-sha256"
+PIN_ITERATIONS = 20_000
+
 MIN_PASSWORD_LENGTH = 8
 PIN_LENGTH = 4
 
@@ -40,28 +53,45 @@ class CredentialError(ValueError):
     """Senha ou PIN fora das regras."""
 
 
-def hash_secret(secret: str) -> str:
-    """Hash de uma senha ou PIN, no formato ``scrypt-v1$sal$hash`` (hex)."""
+def hash_password(password: str) -> str:
+    """Hash da senha do professor: ``scrypt-v1$sal$chave`` (hex)."""
     salt = secrets.token_bytes(SALT_BYTES)
-    key = _derive(secret, salt)
-    return f"{SCHEME}${salt.hex()}${key.hex()}"
+    return f"{SCHEME}${salt.hex()}${_scrypt(password, salt).hex()}"
+
+
+def hash_pin(pin: str, *, iterations: int = PIN_ITERATIONS, salt: bytes | None = None) -> str:
+    """Hash do PIN do aluno: ``pbkdf2-sha256$iterações$sal$chave`` (hex).
+
+    ``salt`` só é fixado por quem gera vetores de teste para o lado Dart.
+    """
+    salt = secrets.token_bytes(SALT_BYTES) if salt is None else salt
+    key = _pbkdf2(pin, salt, iterations)
+    return f"{PIN_SCHEME}${iterations}${salt.hex()}${key.hex()}"
 
 
 def verify_secret(secret: str, stored: str) -> bool:
     """Confere um segredo contra o hash guardado, em tempo constante.
 
-    Devolve ``False`` para hash malformado em vez de lançar: um registro
-    corrompido não pode virar porta de entrada nem derrubar a tela de login.
+    Aceita os dois esquemas. Devolve ``False`` para hash malformado em vez de
+    lançar: um registro corrompido não pode virar porta de entrada nem
+    derrubar a tela de login.
     """
+    parts = stored.split("$")
     try:
-        scheme, salt_hex, key_hex = stored.split("$")
-        if scheme != SCHEME:
+        if parts[0] == SCHEME and len(parts) == 3:
+            salt, expected = bytes.fromhex(parts[1]), bytes.fromhex(parts[2])
+            derived = _scrypt(secret, salt)
+        elif parts[0] == PIN_SCHEME and len(parts) == 4:
+            iterations = int(parts[1])
+            if not 0 < iterations <= 10_000_000:
+                return False
+            salt, expected = bytes.fromhex(parts[2]), bytes.fromhex(parts[3])
+            derived = _pbkdf2(secret, salt, iterations)
+        else:
             return False
-        salt = bytes.fromhex(salt_hex)
-        expected = bytes.fromhex(key_hex)
     except ValueError:
         return False
-    return hmac.compare_digest(_derive(secret, salt), expected)
+    return hmac.compare_digest(derived, expected)
 
 
 def check_password(password: str) -> None:
@@ -101,7 +131,7 @@ def generate_pin() -> str:
         return pin
 
 
-def _derive(secret: str, salt: bytes) -> bytes:
+def _scrypt(secret: str, salt: bytes) -> bytes:
     return hashlib.scrypt(
         secret.encode("utf-8"),
         salt=salt,
@@ -109,6 +139,12 @@ def _derive(secret: str, salt: bytes) -> bytes:
         r=SCRYPT_R,
         p=SCRYPT_P,
         dklen=KEY_BYTES,
+    )
+
+
+def _pbkdf2(secret: str, salt: bytes, iterations: int) -> bytes:
+    return hashlib.pbkdf2_hmac(
+        "sha256", secret.encode("utf-8"), salt, iterations, dklen=KEY_BYTES
     )
 
 

@@ -24,6 +24,7 @@ export 'src/features.dart';
 export 'src/model.dart';
 export 'src/pipeline.dart';
 export 'src/recorder.dart';
+export 'src/roster.dart';
 export 'src/preprocess.dart'
     show
         dropInvalid,

@@ -11,3 +11,7 @@ environment:
 
 dev_dependencies:
   test: ^1.25.0
+dependencies:
+  # SHA-256 para o PBKDF2 do PIN do aluno. Pacote mantido pela equipe do
+  # Dart, em Dart puro: não traz código nativo nem acesso à rede.
+  crypto: ^3.0.7
