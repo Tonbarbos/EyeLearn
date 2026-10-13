@@ -109,7 +109,8 @@ def describe_cohort(traces: list[GazeTrace], removed: int) -> dict:
     }
 
 
-def plot_curve(curve: pd.DataFrame, path: Path, synthetic: bool) -> None:
+def plot_curve(curve: pd.DataFrame, path: Path, provenance: str) -> None:
+    synthetic = provenance.startswith("sintético")
     figure, axes = plt.subplots(figsize=(8.6, 5.0), dpi=130)
     levels = list(dict.fromkeys(curve["level"]))
     positions = np.arange(len(levels))
@@ -138,11 +139,11 @@ def plot_curve(curve: pd.DataFrame, path: Path, synthetic: bool) -> None:
     axes.axhline(50, color="#9AA0B8", linestyle="--", linewidth=1)
     axes.text(len(levels) - 0.5, 51, "acaso", color="#6B7194", ha="right", fontsize=9)
     axes.set_xticks(positions, levels, rotation=25, ha="right")
-    axes.set_ylabel("acurácia (%)")
+    axes.set_ylabel("acurácia (%); barras: faixa entre partições")
     axes.set_ylim(30, 100)
     axes.spines[["top", "right"]].set_visible(False)
     axes.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.3), ncol=3)
-    title = "Acurácia por nível de degradação do sinal"
+    title = f"Acurácia por nível de degradação do sinal — {provenance}"
     if synthetic:
         title += " — ENSAIO SINTÉTICO, sem valor"
     axes.set_title(title, loc="left", fontsize=11)
@@ -158,7 +159,7 @@ def pct(value: float) -> str:
 def write_summary(path: Path, cohort: dict, models: pd.DataFrame, tasks: pd.DataFrame,
                   curve: pd.DataFrame | None, provenance: str, args) -> None:
     lines = [f"# Resultados do experimento — {provenance}", ""]
-    if provenance == "sintético":
+    if provenance.startswith("sintético"):
         lines += [
             "> **ENSAIO COM DADOS SINTÉTICOS.** Estes números vêm da coorte gerada",
             "> pela suíte de testes e não dizem nada sobre leitura nem sobre",
@@ -180,9 +181,9 @@ def write_summary(path: Path, cohort: dict, models: pd.DataFrame, tasks: pd.Data
         ),
         f"- taxa de amostragem: {', '.join(f'{r} Hz' for r in cohort['taxas_hz'])}",
         "",
-        "## 1. Comparação entre modelos (sinal original, três tarefas)",
+        "## 1. Comparação entre modelos (sinal original)",
         "",
-        "| Modelo | Acurácia (IC 95%) | Sensibilidade | Especificidade | AUC | "
+        "| Modelo | Acurácia (faixa entre partições) | Sensibilidade | Especificidade | AUC | "
         f"VPP a {SCHOOL_PREVALENCE:.0%} |",
         "|---|---|---|---|---|---|",
     ]
@@ -249,6 +250,8 @@ def main() -> int:
     parser.add_argument("--splits", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--task", choices=sorted(TASK_LABELS),
+                        help="restringe tudo a uma tarefa (o app usa um modelo por tarefa)")
     parser.add_argument("--skip-degradation", action="store_true",
                         help="pula a curva, que é a etapa demorada")
     args = parser.parse_args()
@@ -265,6 +268,10 @@ def main() -> int:
         dataset = load_etdd70(args.etdd70, args.labels)
         kept = dataset.filter_by_quality()
         traces, removed, provenance = kept.traces, len(dataset) - len(kept), "ETDD70"
+
+    if args.task:
+        traces = [t for t in traces if t.task == args.task]
+        provenance += f", só {TASK_LABELS[args.task].lower()}"
 
     args.out.mkdir(parents=True, exist_ok=True)
     cohort = describe_cohort(traces, removed)
@@ -288,7 +295,7 @@ def main() -> int:
             traces, n_splits=args.splits, n_repeats=args.repeats, seed=args.seed
         )
         curve.to_csv(args.out / "degradacao.csv", index=False)
-        plot_curve(curve, args.out / "degradacao.png", provenance == "sintético")
+        plot_curve(curve, args.out / "degradacao.png", provenance)
 
     write_summary(args.out / "RESULTADOS.md", cohort, models, tasks, curve, provenance, args)
     print(f"resultados em {args.out}")

@@ -22,7 +22,7 @@
     "reading_time": 31.6,
     "scanpath_length": 263.2
   },
-  "score": 8.202731518740765e-32,
+  "score": 0.002229150982500536,
   "model": {
     "score_kind": "probability",
     "feature_names": [
@@ -41,16 +41,17 @@
       "reading_time",
       "scanpath_length"
     ],
-    "exported_at": "2026-10-12T19:39:32+00:00",
+    "exported_at": "2026-10-13T18:24:21+00:00",
     "positive_class": "dyslexic",
+    "task": "text",
     "model_name": "logistic",
-    "training_data": "synthetic",
-    "n_recordings": 72,
-    "n_subjects": 24,
-    "cv_accuracy": 0.7167,
-    "cv_sensitivity": 0.7244,
-    "cv_specificity": 0.72,
-    "cv_roc_auc": 0.8522,
-    "ppv_at_school_prevalence": 0.2233
+    "training_data": "etdd70",
+    "n_recordings": 70,
+    "n_subjects": 70,
+    "cv_accuracy": 0.8514,
+    "cv_sensitivity": 0.8457,
+    "cv_specificity": 0.8571,
+    "cv_roc_auc": 0.9461,
+    "ppv_at_school_prevalence": 0.3968
   }
 }

@@ -1,10 +1,15 @@
 """Gera os ativos que o aplicativo do aluno embarca.
 
-Produz dois arquivos em ``mobile/eyelearn_core/assets``:
+Produz em ``mobile/eyelearn_core/assets``:
 
-* ``model.json`` -- o modelo treinado em formato portátil, lido pelo aparelho;
+* ``model_<tarefa>.json`` -- um modelo por tarefa (``syllables``, ``text``,
+  ``pseudotext``), em formato portátil, lido pelo aparelho. Um por tarefa
+  porque o padrão de leitura muda muito de uma tarefa para outra: no ETDD70,
+  um modelo único para as três acerta 77%, e um por tarefa, de 80% a 86%. O
+  aplicativo sabe a tarefa -- ela vem do QR do professor -- e escolhe o
+  modelo;
 * ``golden.json`` -- os vetores de ouro, lidos pela suíte Dart para verificar
-  que a porta do pipeline concorda com o Python.
+  que a porta do pipeline concorda com o Python. Usa o modelo de ``text``.
 
 Os dois saem da mesma execução de propósito. Gerados em momentos diferentes,
 poderiam descrever extrações diferentes, e a suíte Dart passaria a validar algo
@@ -13,10 +18,10 @@ que o modelo embarcado não espera.
 Uso::
 
     python scripts/build_mobile_assets.py                      # coorte sintética
-    python scripts/build_mobile_assets.py --etdd70 CAMINHO \\
-        --labels CAMINHO/labels.csv                            # base real
+    python scripts/build_mobile_assets.py --etdd70 PASTA_DO_DATA_ZIP \\
+        --labels dyslexia_class_label.csv                      # base real
 
-Sem ``--etdd70`` o modelo é treinado na coorte sintética. Serve para exercitar
+Sem ``--etdd70`` os modelos são treinados na coorte sintética. Serve para exercitar
 o aplicativo de ponta a ponta, **não** para uso real: um modelo treinado em
 percursos gerados não aprendeu nada sobre leitura. O arquivo registra isso em
 ``metadata.training_data``, e o aplicativo mostra o aviso enquanto o valor for
@@ -37,7 +42,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from eyelearn.data.etdd70 import load_etdd70  # noqa: E402
-from eyelearn.export.artifact import export_artifact  # noqa: E402
+from eyelearn.export.artifact import ModelArtifact, export_artifact  # noqa: E402
 from eyelearn.export.golden import build_fixture, save_fixture  # noqa: E402
 from eyelearn.models.train import build_models, cross_validate  # noqa: E402
 from eyelearn.models.validation import subject_folds  # noqa: E402
@@ -58,6 +63,16 @@ APP_ASSETS = REPOSITORY_ROOT / "mobile" / "eyelearn_app" / "assets"
 #: quais características o modelo está usando sem rodar nada.
 DEFAULT_MODEL = "logistic"
 
+TASKS = ("syllables", "text", "pseudotext")
+
+#: Tarefa cujo modelo gera os vetores de ouro. Texto com sentido: é a leitura
+#: mais próxima da de sala de aula.
+GOLDEN_TASK = "text"
+
+
+def model_file(task: str) -> str:
+    return f"model_{task}.json"
+
 
 def synthetic_cohort() -> list[GazeTrace]:
     """Coorte sintética, a mesma que a suíte de testes usa."""
@@ -69,33 +84,27 @@ def synthetic_cohort() -> list[GazeTrace]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--etdd70", type=Path, help="pasta da base ETDD70 já extraída"
-    )
-    parser.add_argument(
-        "--labels", type=Path, help="CSV de rótulos, com as colunas subject e label"
-    )
+    parser.add_argument("--etdd70", type=Path, help="pasta onde data.zip foi extraído")
+    parser.add_argument("--labels", type=Path, help="dyslexia_class_label.csv")
     parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
         choices=sorted(build_models()),
         help=f"modelo a embarcar (padrão: {DEFAULT_MODEL})",
     )
-    parser.add_argument(
-        "--out", type=Path, default=ASSETS, help="pasta de saída dos ativos"
-    )
+    parser.add_argument("--out", type=Path, default=ASSETS, help="pasta de saída dos ativos")
     parser.add_argument(
         "--check",
         action="store_true",
         help=(
-            "não escreve nada; compara os ativos commitados com os que seriam "
-            "gerados agora e falha se divergirem. Usado na integração contínua."
+            "não escreve nada; confere que os ativos commitados estão coerentes "
+            "entre si e com o pipeline atual. Usado na integração contínua."
         ),
     )
     args = parser.parse_args()
 
-    if bool(args.etdd70) != bool(args.labels):
-        parser.error("--etdd70 e --labels andam juntos")
+    if args.check:
+        return _check(args.out)
 
     if args.etdd70:
         dataset = load_etdd70(args.etdd70, args.labels)
@@ -111,10 +120,37 @@ def main() -> int:
             file=sys.stderr,
         )
 
+    artifacts = {
+        task: train_artifact([t for t in traces if t.task == task], task, provenance, args)
+        for task in TASKS
+    }
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    for task, artifact in artifacts.items():
+        artifact.save(args.out / model_file(task))
+        # A cópia para o aplicativo sai da mesma execução: gerada em outro
+        # momento, poderia ser de um modelo diferente do que a suíte Dart
+        # verificou.
+        artifact.save(APP_ASSETS / model_file(task))
+        meta = artifact.metadata
+        print(
+            f"{task:>10}: {meta['n_subjects']} participantes, acurácia "
+            f"{meta['cv_accuracy']:.3f}, AUC {meta['cv_roc_auc']:.3f}, "
+            f"VPP {meta['ppv_at_school_prevalence']:.3f}"
+        )
+    for stale in (args.out / "model.json", APP_ASSETS / "model.json"):
+        stale.unlink(missing_ok=True)  # o modelo único da versão anterior
+
+    save_fixture(args.out / "golden.json", artifact=artifacts[GOLDEN_TASK])
+    print(f"base: {provenance}; ativos em {args.out.relative_to(REPOSITORY_ROOT)}")
+    return 0
+
+
+def train_artifact(traces, task: str, provenance: str, args) -> ModelArtifact:
     config = PipelineConfig()
     X, y, groups = build_dataset(traces, config=config)
     if X.shape[0] == 0:
-        parser.error("nenhum percurso rotulado disponível")
+        raise SystemExit(f"nenhum percurso rotulado para a tarefa {task}")
 
     model = build_models()[args.model]
 
@@ -125,10 +161,11 @@ def main() -> int:
     evaluation = cross_validate(model, X, y, folds, model_name=args.model)
 
     model.fit(X, y)
-    artifact = export_artifact(
+    return export_artifact(
         model,
         config=config,
         metadata={
+            "task": task,
             "model_name": args.model,
             "training_data": provenance,
             "n_recordings": int(X.shape[0]),
@@ -140,32 +177,6 @@ def main() -> int:
             "ppv_at_school_prevalence": round(evaluation.ppv_at_prevalence(), 4),
         },
     )
-
-    if args.check:
-        return _check(artifact, args.out)
-
-    args.out.mkdir(parents=True, exist_ok=True)
-    model_path = artifact.save(args.out / "model.json")
-    golden_path = save_fixture(args.out / "golden.json", artifact=artifact)
-
-    # A cópia para o aplicativo sai da mesma execução: gerada em outro momento,
-    # poderia ser de um modelo diferente do que a suíte Dart verificou.
-    app_path = artifact.save(APP_ASSETS / "model.json")
-
-    print(f"modelo:  {model_path.relative_to(REPOSITORY_ROOT)}")
-    print(f"ouro:    {golden_path.relative_to(REPOSITORY_ROOT)}")
-    print(f"app:     {app_path.relative_to(REPOSITORY_ROOT)}")
-    print(
-        f"base:    {provenance} "
-        f"({artifact.metadata['n_subjects']} participantes, "
-        f"{artifact.metadata['n_recordings']} gravações)"
-    )
-    print(
-        f"validação cruzada: acurácia {artifact.metadata['cv_accuracy']:.3f}, "
-        f"VPP na prevalência escolar "
-        f"{artifact.metadata['ppv_at_school_prevalence']:.3f}"
-    )
-    return 0
 
 
 #: Campos que mudam a cada execução e não descrevem o modelo.
@@ -184,45 +195,51 @@ def _stable(payload: dict) -> dict:
     return copy
 
 
-def _check(artifact, out: Path) -> int:
-    """Compara os ativos commitados com os que seriam gerados agora."""
-    expected = {
-        "model.json": _stable(json.loads(artifact.to_json())),
-        "golden.json": build_fixture(artifact=artifact),
-    }
+def _check(out: Path) -> int:
+    """Confere os ativos commitados.
 
+    Não retreina: o modelo embarcado é treinado no ETDD70, que a integração
+    contínua não tem. O que se confere é o que pode quebrar sem ninguém ver:
+
+    * os vetores de ouro são os que o pipeline **atual** produz com o modelo
+      commitado -- se alguém mudar a extração e esquecer de regerar, a suíte
+      Dart continuaria passando contra um arquivo velho;
+    * as cópias do aplicativo são idênticas às do núcleo;
+    * cada modelo declara a tarefa do próprio nome.
+    """
     stale = []
-    for name, payload in expected.items():
-        path = out / name
+    artifacts = {}
+    for task in TASKS:
+        path = out / model_file(task)
         if not path.exists():
-            stale.append(f"{name}: não existe")
+            stale.append(f"{model_file(task)}: não existe")
             continue
+        artifacts[task] = ModelArtifact.load(path)
+        if artifacts[task].metadata.get("task") != task:
+            stale.append(f"{model_file(task)}: declara outra tarefa")
+        app_copy = APP_ASSETS / model_file(task)
+        if not app_copy.exists() or _stable(
+            json.loads(app_copy.read_text(encoding="utf-8"))
+        ) != _stable(json.loads(path.read_text(encoding="utf-8"))):
+            stale.append(f"eyelearn_app/assets/{model_file(task)}: difere do núcleo")
 
-        current = json.loads(path.read_text(encoding="utf-8"))
-        if name == "model.json":
-            current = _stable(current)
-        if current != payload:
-            stale.append(f"{name}: difere do que o pipeline atual gera")
-
-    app_model = APP_ASSETS / "model.json"
-    if not app_model.exists():
-        stale.append("eyelearn_app/assets/model.json: não existe")
-    elif _stable(json.loads(app_model.read_text(encoding="utf-8"))) != expected[
-        "model.json"
-    ]:
-        stale.append("eyelearn_app/assets/model.json: difere do núcleo")
+    golden = out / "golden.json"
+    if GOLDEN_TASK in artifacts:
+        expected = build_fixture(artifact=artifacts[GOLDEN_TASK])
+        if not golden.exists():
+            stale.append("golden.json: não existe")
+        elif json.loads(golden.read_text(encoding="utf-8")) != expected:
+            stale.append("golden.json: difere do que o pipeline atual gera")
 
     if stale:
         print("Ativos desatualizados:", file=sys.stderr)
         for problem in stale:
             print(f"  - {problem}", file=sys.stderr)
-        print(
-            "\nRode: python scripts/build_mobile_assets.py",
-            file=sys.stderr,
-        )
+        print("\nRode: python scripts/build_mobile_assets.py --etdd70 ...", file=sys.stderr)
         return 1
 
-    print("ativos em dia")
+    provenance = {a.metadata.get("training_data") for a in artifacts.values()}
+    print(f"ativos em dia ({', '.join(sorted(provenance))})")
     return 0
 
 

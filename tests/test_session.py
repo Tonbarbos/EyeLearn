@@ -366,3 +366,12 @@ class TestCrossLanguageFormat:
         raw = self.FIXTURE.read_text(encoding="utf-8").lower()
         for forbidden in ("base64", "jpeg", "image", "samples", "student_name"):
             assert forbidden not in raw, forbidden
+
+
+class TestDemoData:
+    def test_flag_is_read(self):
+        payload = make_payload() | {"demo_data": True}
+        assert session_from_dict(payload).demo_data
+
+    def test_absent_means_real(self):
+        assert not session_from_dict(make_payload()).demo_data

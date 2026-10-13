@@ -17,7 +17,7 @@ import 'package:eyelearn_core/eyelearn_core.dart';
 
 void main() {
   final artifact = ModelArtifact.fromJsonString(
-    File('assets/model.json').readAsStringSync(),
+    File('assets/model_text.json').readAsStringSync(),
   );
 
   // Características plausíveis de uma leitura de texto a 30 Hz: cerca de

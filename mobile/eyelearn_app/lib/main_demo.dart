@@ -35,7 +35,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final artifact = ModelArtifact.fromJsonString(
-    await rootBundle.loadString('assets/model.json'),
+    // A pré-visualização percorre só o texto com sentido; usa o modelo dele.
+    await rootBundle.loadString('assets/model_text.json'),
   );
 
   // A lista fictícia vem com os PINs ao lado, para quem experimenta saber o

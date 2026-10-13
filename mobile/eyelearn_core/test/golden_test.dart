@@ -35,7 +35,7 @@ const double tolerance = 1e-9;
 void main() {
   final fixture = _loadJson('assets/golden.json');
   final artifact = ModelArtifact.fromJsonString(
-    File('assets/model.json').readAsStringSync(),
+    File('assets/model_text.json').readAsStringSync(),
   );
 
   final cases =

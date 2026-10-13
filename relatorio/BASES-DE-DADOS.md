@@ -1,47 +1,115 @@
 # Bases de dados: o que é usado, como é treinado, o que é comparado
 
-Texto de apoio para reescrever a seção 4.1 (Fontes de Dados) e o trecho de
-modelagem da 4.3. Separa o que **já está implementado** do que **ainda não
-rodou**, para que o relatório não afirme resultado que o projeto não tem.
+Texto de apoio para reescrever a seção 4.1 (Fontes de Dados), o trecho de
+modelagem da 4.3 e a seção de resultados. Os números abaixo vêm da execução
+sobre o ETDD70 real.
 
 ## Situação em 13/10/2026
 
-| Item | Situação |
-|---|---|
-| Leitura do ETDD70 (`eyelearn/data/etdd70.py`) | implementada e testada com arquivos no formato esperado |
-| Treino, validação cruzada por participante, métricas | implementados e testados |
-| Curva de degradação | implementada e testada |
-| Roteiro único do experimento (`scripts/run_etdd70.py`) | pronto; ensaiado na coorte sintética |
-| **Execução sobre o ETDD70 real** | **não feita** |
-| Modelo embarcado no celular | treinado em **dados sintéticos**; o aplicativo e o painel avisam |
-| Segunda base | fora do escopo atual; ver "Segunda base" abaixo |
+O experimento **rodou sobre o ETDD70 real** (registro Zenodo 13332134, baixado
+em 13/10/2026). Resultados completos, com tabelas e gráficos, em
+[`resultados/`](resultados/):
 
-Ou seja: **não há ainda nenhum número de acurácia do projeto sobre dados
-reais.** Toda acurácia que aparecer antes da execução sobre o ETDD70 vem da
-coorte sintética e não pode ser citada.
+- [`resultados/texto-com-sentido/`](resultados/texto-com-sentido/RESULTADOS.md) -- a tarefa principal;
+- [`resultados/todas-as-tarefas/`](resultados/todas-as-tarefas/RESULTADOS.md) -- as três juntas e cada uma sozinha.
 
-Por que não rodou: o ETDD70 não pode ser redistribuído no repositório, e o
-ambiente onde o código foi desenvolvido não tem acesso ao Zenodo. Para rodar:
+Para reproduzir (cerca de 25 minutos num notebook):
 
 ```bash
-# 1. baixar https://doi.org/10.5281/zenodo.13332134 e extrair
-# 2. montar labels.csv com as colunas subject,label (0 típico, 1 dislexia)
-python scripts/run_etdd70.py --etdd70 CAMINHO --labels CAMINHO/labels.csv
-# resultados/RESULTADOS.md, *.csv e degradacao.png
-python scripts/build_mobile_assets.py --etdd70 CAMINHO --labels CAMINHO/labels.csv
-# troca o modelo sintético do celular pelo treinado na base real
+python scripts/run_etdd70.py --etdd70 PASTA_DO_DATA_ZIP --labels dyslexia_class_label.csv
+python scripts/run_etdd70.py --etdd70 ... --labels ... --task text --out resultados/texto
+python scripts/build_mobile_assets.py --etdd70 ... --labels ...   # modelos do celular
 ```
 
-**Antes de confiar no primeiro resultado**, conferir com a documentação da
-base dois pressupostos do leitor, escritos sem acesso aos arquivos:
+### O que a base trouxe de diferente do previsto
 
-1. **Nomes de colunas e unidade do tempo.** O leitor espera `time`, `x`, `y`
-   com tempo em milissegundos. Se a base usar outros nomes, basta informar um
-   `ColumnMap`; não é preciso mudar código.
-2. **Geometria da tela.** O padrão é um monitor de 24 polegadas a 60 cm.
-   Toda medida espacial (amplitude de sacada, dispersão, ruído da degradação)
-   é convertida para graus com esses números. Um valor errado escala todas as
-   características espaciais e desloca a curva de degradação inteira.
+| Pressuposto do leitor | Real | Tratamento |
+|---|---|---|
+| uma coordenada por amostra | **binocular** (olho esquerdo e direito) | média dos dois; o que sobrou quando um se perde |
+| tempo em milissegundos | **microssegundos** (4000 entre amostras a 250 Hz) | conferido nos dados; a definição do pymovements declara ms e está errada |
+| amostra perdida como célula vazia | **0** | zero vira amostra perdida |
+| tela de 24" a 60 cm | 1680 x 1050 px a **65 cm** (o artigo diz 60 a 70) | resolução conferida nas imagens dos estímulos |
+| largura física da tela | **não publicada** | 47,4 cm, monitor de 22" em 16:10 -- **suposição** |
+
+A largura da tela é a única suposição restante. Errar ela muda todas as medidas
+espaciais pelo mesmo fator, o que a padronização do modelo absorve; o que não
+absorve é o limiar de velocidade do I-VT (30 °/s) e o ruído da curva, em graus.
+Vale confirmar com os autores (contato no registro do Zenodo).
+
+A qualidade da base é alta: a pior gravação tem 93% de amostras válidas, e
+nenhuma das 210 foi descartada pelo filtro de 75%.
+
+## Resultados (ETDD70, 70 participantes, validação 5 x 5 por participante)
+
+### Um modelo por tarefa, não um para as três
+
+| Tarefa | Regressão logística | SVM | Floresta aleatória | AUC (logística) |
+|---|---|---|---|---|
+| Sílabas | 80,3% | 79,1% | 76,6% | 0,92 |
+| **Texto com sentido** | **85,1%** | 83,7% | 81,1% | **0,95** |
+| Pseudotexto | 82,3% | 85,7% | 84,6% | 0,92 |
+| As três juntas | 77,0% | 77,6% | 77,1% | 0,87 |
+
+Juntar as três tarefas num modelo só **piora** o resultado: o padrão de leitura
+de sílabas soltas e o de uma história são diferentes demais, e o modelo não
+sabe qual está vendo. O aplicativo sabe -- a tarefa vem do QR do professor --,
+então embarca um modelo por tarefa.
+
+A **regressão logística** é a melhor ou empata em duas das três tarefas. Com
+70 participantes, os modelos mais flexíveis não têm dados para mostrar
+vantagem; a logística é também a única cujos coeficientes se leem.
+
+Referência: os autores da base relatam cerca de 90% com seu melhor modelo; Vajs
+et al. (2023), 88,9% em outra base. Os 85,1% daqui usam só as 14 características
+do pipeline, as mesmas que o celular calcula.
+
+### Valor preditivo positivo: o número que justifica não diagnosticar
+
+Mesmo no melhor caso (texto, 85,1%), numa escola com 10% de crianças com
+dislexia, **de cada 10 crianças que o modelo apontasse, só 4 teriam dislexia**
+(VPP 39,7%). É por isso que o sistema não mostra resultado à criança, não
+emite diagnóstico e apresenta ao professor a comparação com a turma, não a
+pontuação.
+
+### Curva de degradação (texto com sentido, regressão logística)
+
+| Nível | Acurácia | Diferença pareada |
+|---|---|---|
+| original (250 Hz) | 85,1% | -- |
+| 60 Hz | 84,0% | |
+| 30 Hz | 78,3% | |
+| 30 Hz + 1,0° | 80,6% | -4,6 pontos |
+| **30 Hz + 2,0°** | **77,7%** | **-7,4 pontos** (as 5 repetições entre -5,7 e -10,0) |
+| 30 Hz + 3,0° | 78,6% | -6,6 pontos |
+| 15 Hz + 1,0° | 81,7% | |
+
+Leitura:
+
+1. **A taxa de amostragem, sozinha, pesa pouco.** De 250 para 60 Hz não muda
+   nada; 15 Hz com 1° de ruído ainda fica em 82%. Concorda com Vajs et al.
+   (2023), que viram 88,9% → 87,8% de 60 para 30 Hz.
+2. **No ponto de operação do aplicativo (30 Hz com 2 a 3° de erro), perdem-se
+   cerca de 7 pontos**: de 85% para 78%. A perda é consistente -- nas cinco
+   repetições da validação, todas negativas, entre 5,7 e 10 pontos.
+3. Com as três tarefas juntas a queda é maior: de 77% para 69% (AUC 0,87 →
+   0,77). Mais um motivo para o modelo por tarefa.
+4. **O ganho possível está na precisão espacial, não na taxa.** Levar o erro de
+   2-3° para 1° -- o que a literatura obtém com redes neurais de estimação do
+   olhar (Valliappan et al., 2020) -- recupera parte da perda. Esse é o
+   trabalho futuro mais promissor do aplicativo.
+
+**Sobre as faixas nos gráficos:** as barras de erro são a dispersão entre as 25
+partições de teste (cada uma com uns 14 participantes), não o intervalo de
+confiança da média. Por isso são largas (cerca de 65% a 95%) e se sobrepõem
+entre níveis. Para comparar níveis, a medida certa é a diferença pareada nas
+mesmas partições, a da tabela acima.
+
+### Modelos no celular
+
+Os três modelos de regressão logística, um por tarefa, treinados nos 70
+participantes, estão em `mobile/eyelearn_core/assets/model_<tarefa>.json` e
+substituem o modelo de dados sintéticos usado antes. São CC BY 4.0 por derivarem do ETDD70 --
+citar Dostálová et al. (2024).
 
 ## 4.1 Fontes de dados (texto proposto)
 
@@ -107,7 +175,7 @@ resultado à criança e não emitir diagnóstico.
    com características interpretáveis. É a referência para o nível "30 Hz" da
    curva.
 
-**Modelo final.** O modelo que vai para o celular é treinado com todos os
+**Modelo final.** O aplicativo usa um modelo por tarefa, treinado com todos os
 participantes depois da avaliação, exportado como JSON e verificado contra o
 scikit-learn até a 12ª casa decimal.
 

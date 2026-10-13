@@ -14,7 +14,7 @@ import 'package:test/test.dart';
 
 void main() {
   final artifact = ModelArtifact.fromJsonString(
-    File('assets/model.json').readAsStringSync(),
+    File('assets/model_text.json').readAsStringSync(),
   );
 
   Session buildSession({

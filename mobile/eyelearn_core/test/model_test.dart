@@ -15,7 +15,7 @@ import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:test/test.dart';
 
 void main() {
-  final source = File('assets/model.json').readAsStringSync();
+  final source = File('assets/model_text.json').readAsStringSync();
   final payload = jsonDecode(source) as Map<String, dynamic>;
 
   /// Cópia profunda do artefato embarcado, para alterar sem contaminar os

@@ -23,15 +23,22 @@ Não coletamos dados de crianças. O treino e a avaliação usam apenas bases p�
 |---|---|---|
 | [ETDD70](https://doi.org/10.5281/zenodo.13332134) | 70 estudantes de 9–10 anos (35 com dislexia), 3 tarefas de leitura | Zenodo, aberta para pesquisa |
 
-É a única base de treino e avaliação. **O experimento ainda não rodou sobre
-ela**: o modelo embarcado hoje foi treinado em dados sintéticos, e o aplicativo
-e o painel avisam disso. O que é treinado, o que é comparado e como rodar está
-em [`relatorio/BASES-DE-DADOS.md`](relatorio/BASES-DE-DADOS.md); o roteiro
-completo é um comando só:
+É a única base de treino e avaliação. Resultado principal, com validação
+cruzada por participante:
+
+| | Acurácia | AUC |
+|---|---|---|
+| Texto com sentido, sinal do rastreador de bancada | 85,1% | 0,95 |
+| Mesmo texto, degradado a 30 Hz com 2° de erro (o do aplicativo) | 77,7% | 0,86 |
+
+Mesmo no melhor caso, numa escola com 10% de prevalência, de cada 10 crianças
+apontadas só 4 teriam dislexia -- por isso o sistema não diagnostica. Tabelas,
+curva de degradação e discussão em
+[`relatorio/BASES-DE-DADOS.md`](relatorio/BASES-DE-DADOS.md) e
+[`relatorio/resultados/`](relatorio/resultados/). Para reproduzir:
 
 ```bash
-python scripts/run_etdd70.py --etdd70 CAMINHO --labels CAMINHO/labels.csv
-python scripts/run_etdd70.py --synthetic     # ensaio sem a base; números sem valor
+python scripts/run_etdd70.py --etdd70 PASTA_DO_DATA_ZIP --labels dyslexia_class_label.csv
 ```
 
 ## Onde cada parte roda

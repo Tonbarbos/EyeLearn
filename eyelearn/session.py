@@ -49,6 +49,9 @@ class Session:
     features: dict[str, float]
     score: float
     model: dict[str, Any]
+    #: Sessão gerada para demonstração (``scripts/make_demo_class.py``), com
+    #: percurso inventado em vez de criança lendo.
+    demo_data: bool = False
 
     @property
     def has_usable_quality(self) -> bool:
@@ -115,6 +118,7 @@ def session_from_dict(payload: dict[str, Any]) -> Session:
         features={name: float(features[name]) for name in FEATURE_NAMES},
         score=float(payload["score"]),
         model=dict(payload.get("model", {})),
+        demo_data=bool(payload.get("demo_data", False)),
     )
 
 

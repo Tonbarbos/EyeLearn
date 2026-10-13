@@ -110,13 +110,17 @@ class EvaluationResult:
         return float(np.mean(values)) if values else float("nan")
 
     def confidence_interval(self, metric: str, level: float = 0.95) -> tuple[float, float]:
-        """Intervalo de confiança da média, pelos percentis entre as partições.
+        """Faixa da métrica entre as partições, pelos percentis.
 
-        O intervalo é empírico, obtido da dispersão entre as repetições da
-        validação cruzada, e não assume normalidade. Ele descreve a variação
-        devida à divisão dos participantes, não a incerteza de generalização
-        para outra população -- com 70 participantes de uma única escola, essa
-        última é necessariamente maior.
+        **Não é o intervalo de confiança da média.** É a dispersão da métrica
+        de uma partição para outra -- com 70 participantes, cada partição de
+        teste tem uns 14, e a acurácia de uma partição varia muito. O
+        intervalo da média é bem mais estreito. Para comparar dois níveis da
+        curva de degradação, o certo é a diferença pareada nas mesmas
+        partições, não a sobreposição destas faixas.
+
+        Também não mede a incerteza de generalização para outra população --
+        com 70 participantes de uma única base, essa é necessariamente maior.
         """
         if not 0 < level < 1:
             raise ValueError("level deve estar entre 0 e 1")

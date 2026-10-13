@@ -13,9 +13,9 @@ library;
 
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'src/activity/models.dart';
 import 'src/activity/passages.dart';
 import 'src/gaze/gaze_channel.dart';
 import 'src/session/roster_store.dart';
@@ -31,24 +31,20 @@ import 'src/ui/widgets.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final artifact = ModelArtifact.fromJsonString(
-    await rootBundle.loadString('assets/model.json'),
-  );
-
-  runApp(EyeLearnApp(artifact: artifact));
+  runApp(EyeLearnApp(models: await loadModels()));
 }
 
 class EyeLearnApp extends StatelessWidget {
-  final ModelArtifact artifact;
+  final Map<String, ModelArtifact> models;
 
-  const EyeLearnApp({super.key, required this.artifact});
+  const EyeLearnApp({super.key, required this.models});
 
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'EyeLearn',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
-        home: SetupScreen(artifact: artifact),
+        home: SetupScreen(models: models),
       );
 }
 
@@ -58,9 +54,10 @@ class EyeLearnApp extends StatelessWidget {
 /// há cadastro de alunos no aplicativo: a lista vem pronta do painel, e o que
 /// sai daqui na sessão é o código do aluno e o da atividade, não o nome.
 class SetupScreen extends StatefulWidget {
-  final ModelArtifact artifact;
+  /// Um modelo por tarefa; ver `loadModels`.
+  final Map<String, ModelArtifact> models;
 
-  const SetupScreen({super.key, required this.artifact});
+  const SetupScreen({super.key, required this.models});
 
   @override
   State<SetupScreen> createState() => _SetupScreenState();
@@ -150,8 +147,7 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  bool get _trainedOnSyntheticData =>
-      widget.artifact.metadata['training_data'] == 'synthetic';
+  bool get _trainedOnSyntheticData => anyTrainedOnSyntheticData(widget.models);
 
   Future<void> _begin(String code, ActivityTicket ticket) async {
     final status = await Permission.camera.request();
@@ -176,7 +172,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 channel: channel,
                 calibration: calibration,
                 passage: passageById(ticket.task),
-                artifact: widget.artifact,
+                artifact: widget.models[ticket.task]!,
                 participantCode: code,
                 activityCode: ticket.activityCode,
               ),

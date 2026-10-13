@@ -58,6 +58,12 @@ duas pontas. Os três modelos do estudo — regressão logística, SVM radial e
 floresta aleatória — têm função de decisão fechada e curta. `eyelearn/export`
 escreve essa função explicitamente em JSON, e `model.dart` a reimplementa.
 
+O aplicativo embarca **um modelo por tarefa** (`assets/model_syllables.json`,
+`model_text.json`, `model_pseudotext.json`), regressões logísticas treinadas no
+ETDD70 real, e usa o da tarefa que veio no QR do professor. Um modelo único
+para as três tarefas acerta 77%; um por tarefa, de 80% a 86% (ver
+`relatorio/BASES-DE-DADOS.md`). Os modelos derivam do ETDD70, sob CC BY 4.0.
+
 O resultado é reprodução exata: a regressão logística concorda com o
 scikit-learn em 1e-16, o SVM em 3e-15, e a floresta **bit a bit**. Sem
 dependência nativa, e com 2 KB de arquivo em vez de meio megabyte.

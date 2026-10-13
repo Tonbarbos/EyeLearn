@@ -2,8 +2,9 @@
 
 Serve para experimentar o painel do professor sem precisar de celular, de
 câmera e de crianças. **Não é dado real**: os percursos saem do gerador
-sintético, e o modelo que os pontua foi treinado nos mesmos percursos. Nenhum
-número daqui diz nada sobre leitura.
+sintético. O modelo que os pontua é o embarcado no celular, treinado no ETDD70,
+mas pontuar percurso inventado não diz nada sobre leitura. Cada sessão sai
+marcada com ``demo_data``, e o painel avisa.
 
 Uso::
 
@@ -35,7 +36,7 @@ from eyelearn.session import SESSION_FORMAT_VERSION  # noqa: E402
 from eyelearn.storage.store import Store  # noqa: E402
 from eyelearn.synthetic import reading_trace  # noqa: E402
 
-ARTIFACT = REPOSITORY_ROOT / "mobile" / "eyelearn_core" / "assets" / "model.json"
+ASSETS = REPOSITORY_ROOT / "mobile" / "eyelearn_core" / "assets"
 
 #: Tarefas, na ordem do ETDD70.
 TASKS = ("syllables", "text", "pseudotext")
@@ -78,7 +79,7 @@ def main() -> int:
             for name in DEMO_NAMES[: args.students]
         ]
 
-    artifact = ModelArtifact.load(ARTIFACT)
+    artifacts = {task: ModelArtifact.load(ASSETS / f"model_{task}.json") for task in TASKS}
     config = PipelineConfig()
     rng = np.random.default_rng(args.seed)
 
@@ -117,6 +118,7 @@ def main() -> int:
             features = trace_to_features(trace, config)
             vector = np.array([features[name] for name in FEATURE_NAMES])
 
+            artifact = artifacts[task]
             payload = {
                 "format_version": SESSION_FORMAT_VERSION,
                 "participant_code": code,
@@ -138,6 +140,8 @@ def main() -> int:
                     "feature_names": list(FEATURE_NAMES),
                     **artifact.metadata,
                 },
+                # Percurso gerado, não criança: o painel mostra o aviso.
+                "demo_data": True,
             }
 
             name = f"eyelearn_{code}_{task}.json"

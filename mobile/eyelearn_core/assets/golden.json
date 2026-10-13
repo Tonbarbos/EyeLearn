@@ -902,8 +902,8 @@
           "reading_time": 1.084,
           "scanpath_length": 5.993056256255
         },
-        "score": 0.998829796916,
-        "label": 1
+        "score": 3.093075e-06,
+        "label": 0
       }
     },
     {
@@ -3941,8 +3941,8 @@
           "reading_time": 3.884,
           "scanpath_length": 32.079236811097
         },
-        "score": 0.612609515966,
-        "label": 1
+        "score": 0.000146191592,
+        "label": 0
       }
     },
     {
@@ -4109,8 +4109,8 @@
           "reading_time": 1.133333333333,
           "scanpath_length": 9.0
         },
-        "score": 1.0,
-        "label": 1
+        "score": 1.777482e-06,
+        "label": 0
       }
     },
     {
@@ -4144,7 +4144,7 @@
           "reading_time": 0.0,
           "scanpath_length": 0.0
         },
-        "score": 0.0,
+        "score": 0.010334657369,
         "label": 0
       }
     },
@@ -4185,7 +4185,7 @@
           "reading_time": 0.0,
           "scanpath_length": 0.0
         },
-        "score": 0.0,
+        "score": 0.010334657369,
         "label": 0
       }
     },
@@ -4283,7 +4283,7 @@
           "reading_time": 0.076,
           "scanpath_length": 0.0
         },
-        "score": 0.0,
+        "score": 0.01034303363,
         "label": 0
       }
     },
@@ -5162,8 +5162,8 @@
           "reading_time": 1.584,
           "scanpath_length": 3.998741732051
         },
-        "score": 0.607669461604,
-        "label": 1
+        "score": 5.3281235e-05,
+        "label": 0
       }
     },
     {
@@ -5507,7 +5507,7 @@
           "reading_time": 0.396,
           "scanpath_length": 0.0
         },
-        "score": 0.0,
+        "score": 0.018161335253,
         "label": 0
       }
     }

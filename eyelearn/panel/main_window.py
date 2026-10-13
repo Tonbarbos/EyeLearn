@@ -303,9 +303,16 @@ class PanelWindow(QWidget):
 
     def _set_sessions(self, sessions: list[Session]) -> None:
         self._sessions = sessions
+        demo = any(s.demo_data for s in self._sessions)
         synthetic = any(s.trained_on_synthetic_data for s in self._sessions)
-        self._synthetic_banner.setVisible(synthetic)
-        if synthetic:
+        self._synthetic_banner.setVisible(demo or synthetic)
+        if demo:
+            self._synthetic_banner.setText(
+                "Turma de demonstração: os percursos do olhar foram gerados por "
+                "computador, não vêm de crianças lendo. Os números abaixo servem "
+                "para experimentar o painel, não para orientar decisão nenhuma."
+            )
+        elif synthetic:
             self._synthetic_banner.setText(
                 "As sessões desta turma foram pontuadas por um modelo treinado "
                 "em dados sintéticos, que não aprendeu nada sobre leitura. Os "

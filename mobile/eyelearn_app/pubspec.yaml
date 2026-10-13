@@ -47,7 +47,10 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/model.json
+    # Um modelo por tarefa, treinados no ETDD70 (scripts/build_mobile_assets.py).
+    - assets/model_syllables.json
+    - assets/model_text.json
+    - assets/model_pseudotext.json
     # Só a pré-visualização no navegador usa. Alunos fictícios.
     - assets/demo_roster.json
 
