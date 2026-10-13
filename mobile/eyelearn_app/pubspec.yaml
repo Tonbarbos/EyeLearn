@@ -32,6 +32,7 @@ dependencies:
   # substitui um servidor: nada trafega pela rede.
   share_plus: ^10.0.2
   path_provider: ^2.1.4
+  file_picker: ^11.0.3
 
 dev_dependencies:
   flutter_test:
@@ -46,6 +47,8 @@ flutter:
 
   assets:
     - assets/model.json
+    # Só a pré-visualização no navegador usa. Alunos fictícios.
+    - assets/demo_roster.json
 
   # O Roboto vai embutido, e não deixado ao padrão da plataforma, por uma razão
   # de medida: o mesmo texto tem de ocupar a mesma largura em todo aparelho.

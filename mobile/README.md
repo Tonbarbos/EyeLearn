@@ -11,6 +11,26 @@ celular.
 > escolar é de cerca de 22% seria o oposto do que o projeto se compromete a
 > fazer.
 
+## Login do aluno
+
+O professor cadastra a turma no painel e exporta a **lista da turma**
+(`turma_*.eyelearn.json`). No celular, um adulto importa o arquivo uma vez, em
+**Importar lista da turma**; a lista fica no diretório de documentos do
+aplicativo. Depois disso, a tela inicial mostra os nomes: a criança toca no
+dela e digita o PIN de quatro dígitos num teclado próprio, de teclas grandes.
+
+- A lista leva só "Ana S.", o código e o hash do PIN. O nome completo fica no
+  computador do professor, e a sessão sai do aparelho com o código.
+- O PIN é conferido no aparelho, offline, por PBKDF2-SHA256
+  (`eyelearn_core/lib/src/roster.dart`). O mesmo hash é gravado pelo Python, e
+  `test/roster_test.dart` confere os dois lados contra uma lista gerada por
+  `scripts/make_roster_fixture.py`, além dos vetores publicados do PBKDF2.
+- Cinco PINs errados bloqueiam aquele aluno por um minuto, dobrando a cada
+  novo bloqueio. A mensagem pede para esperar e chamar o professor, sem
+  vermelho: errar o PIN não é falha da criança.
+- O seletor de arquivos é o do sistema (`file_picker`), sem permissão de
+  armazenamento nem de internet.
+
 ## Os dois pacotes
 
 | Pacote | O que é | Roda sem Flutter? |
@@ -150,13 +170,14 @@ retornos de linha que o modelo receberia. Ambos corrigidos, com testes.
 # Núcleo: roda em qualquer máquina
 cd mobile/eyelearn_core
 dart pub get
-dart test                       # 139 testes, inclui o diferencial
+dart test                       # 165 testes, inclui o diferencial e o do PIN
 dart analyze
 
 # Regerar os ativos embarcados (do lado Python)
 cd ../..
 python scripts/build_mobile_assets.py
 python scripts/build_mobile_assets.py --check   # o que a CI roda
+python scripts/make_roster_fixture.py           # lista de exemplo do PIN
 ```
 
 ### Aplicativo
@@ -183,11 +204,13 @@ Antes do primeiro `flutter run`:
 ## O que esta sessão não conseguiu verificar
 
 O aplicativo **compila** (`flutter build web`) e `flutter analyze` passa sem
-observações; `flutter test` roda 16 testes de widget. A pré-visualização no
+observações; `flutter test` roda 25 testes de widget, entre eles os da tela do
+PIN. A pré-visualização no
 navegador foi executada e gravada de ponta a ponta.
 
 O que continua sem verificação é o caminho Android: `GazePlugin.kt`, o
 `AndroidManifest.xml` e o `build.gradle.kts` **nunca foram compilados**, porque
 o ambiente não tem o SDK do Android. Espere ajustes nas versões do MediaPipe
 Tasks Vision e do CameraX, e na conversão de quadro (`image.toBitmap()` exige
-CameraX recente). O iOS não está implementado.
+CameraX recente). O iOS não está implementado. O `file_picker` também só foi
+exercitado no navegador.

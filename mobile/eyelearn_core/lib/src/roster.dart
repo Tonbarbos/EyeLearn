@@ -219,18 +219,28 @@ class PinAttemptLimiter {
   }
 
   /// Tenta o login: confere o bloqueio, o PIN e registra o resultado.
-  PinResult attempt(RosterStudent student, String pin) {
-    final remaining = remainingLockout(student.code);
-    if (remaining > Duration.zero) return PinResult.locked(remaining);
-    if (student.checkPin(pin)) {
-      recordSuccess(student.code);
+  PinResult attempt(RosterStudent student, String pin) =>
+      lockedResult(student.code) ??
+      register(student.code, accepted: student.checkPin(pin));
+
+  /// O resultado de bloqueio, se o aluno estiver bloqueado; `null` se não.
+  ///
+  /// Junto com [register], separa a conferência do PIN -- que custa vinte mil
+  /// rodadas de HMAC e, no aparelho, roda fora da linha da interface -- da
+  /// contagem de tentativas, que é estado e fica nesta.
+  PinResult? lockedResult(String code) {
+    final remaining = remainingLockout(code);
+    return remaining > Duration.zero ? PinResult.locked(remaining) : null;
+  }
+
+  /// Registra uma conferência já feita e diz o que mostrar.
+  PinResult register(String code, {required bool accepted}) {
+    if (accepted) {
+      recordSuccess(code);
       return const PinResult.accepted();
     }
-    recordFailure(student.code);
-    final after = remainingLockout(student.code);
-    return after > Duration.zero
-        ? PinResult.locked(after)
-        : const PinResult.rejected();
+    recordFailure(code);
+    return lockedResult(code) ?? const PinResult.rejected();
   }
 }
 

@@ -1,8 +1,9 @@
 /// Aplicativo do aluno.
 ///
-/// O fluxo é: um adulto informa o código do participante e escolhe a tarefa, a
-/// criança calibra seguindo uma bolinha, lê o texto, e o adulto compartilha o
-/// arquivo de sessão com o professor.
+/// O fluxo é: o adulto importa uma vez a lista da turma que o painel exportou e
+/// escolhe a atividade; a criança toca no próprio nome e digita o PIN, calibra
+/// seguindo uma bolinha e lê o texto; o adulto compartilha o arquivo de sessão
+/// com o professor.
 ///
 /// A criança nunca vê resultado. A tela final diz que ela terminou, e é tudo --
 /// ver mais que isso seria receber um rótulo de um modelo cujo valor preditivo
@@ -16,10 +17,12 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'src/activity/passages.dart';
 import 'src/gaze/gaze_channel.dart';
+import 'src/session/roster_store.dart';
 import 'src/session/session_export.dart';
 import 'src/ui/calibration_screen.dart';
 import 'src/ui/finished_screen.dart';
 import 'src/ui/reading_screen.dart';
+import 'src/ui/student_login.dart';
 import 'src/ui/theme.dart';
 import 'src/ui/widgets.dart';
 
@@ -47,11 +50,11 @@ class EyeLearnApp extends StatelessWidget {
       );
 }
 
-/// Tela inicial, para o adulto.
+/// Tela inicial.
 ///
-/// Pede o código do participante e a tarefa. Não há cadastro de alunos no
-/// aplicativo de propósito: a associação entre código e criança fica com o
-/// professor, fora do aparelho.
+/// O adulto escolhe a atividade; a criança, o próprio nome. Não há cadastro de
+/// alunos no aplicativo: a lista vem pronta do painel, e o que sai daqui na
+/// sessão é o código do aluno, não o nome.
 class SetupScreen extends StatefulWidget {
   final ModelArtifact artifact;
 
@@ -62,26 +65,63 @@ class SetupScreen extends StatefulWidget {
 }
 
 class _SetupScreenState extends State<SetupScreen> {
-  final _codeController = TextEditingController();
+  /// Vive enquanto o aplicativo estiver aberto: voltar da tela do PIN e tocar
+  /// no nome de novo não zera a contagem de tentativas.
+  final _limiter = PinAttemptLimiter();
+
   Passage _passage = passages.first;
+  Roster? _roster;
+  bool _loadingRoster = true;
   String? _error;
 
   @override
-  void dispose() {
-    _codeController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    loadSavedRoster().then((roster) {
+      if (mounted) {
+        setState(() {
+          _roster = roster;
+          _loadingRoster = false;
+        });
+      }
+    });
+  }
+
+  Future<void> _importRoster() async {
+    try {
+      final roster = await pickAndSaveRoster();
+      if (roster == null || !mounted) return;
+      setState(() {
+        _roster = roster;
+        _error = null;
+      });
+    } on FormatException catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Não foi possível usar o arquivo: '
+            '${error.message}.');
+      }
+    }
+  }
+
+  Future<void> _studentSelected(RosterStudent student) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PinScreen(
+          student: student,
+          limiter: _limiter,
+          onAccepted: () {
+            Navigator.of(context).pop();
+            _begin(student.code);
+          },
+        ),
+      ),
+    );
   }
 
   bool get _trainedOnSyntheticData =>
       widget.artifact.metadata['training_data'] == 'synthetic';
 
-  Future<void> _begin() async {
-    final code = _codeController.text.trim();
-    if (code.isEmpty) {
-      setState(() => _error = 'Informe um código para o participante.');
-      return;
-    }
-
+  Future<void> _begin(String code) async {
     final status = await Permission.camera.request();
     if (!status.isGranted) {
       setState(
@@ -128,33 +168,6 @@ class _SetupScreenState extends State<SetupScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('Quem vai ler hoje?', style: AppType.title),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _codeController,
-                        textCapitalization: TextCapitalization.characters,
-                        style: AppType.body.copyWith(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Código do participante',
-                          helperText: 'Nunca o nome da criança',
-                          helperStyle: AppType.body.copyWith(
-                            fontSize: 12.5,
-                            color: Palette.inkMuted,
-                          ),
-                          prefixIcon: const Icon(Icons.badge_outlined),
-                          filled: true,
-                          fillColor: Palette.background,
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(Shapes.chipRadius + 2),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
                       const Text('Atividade', style: AppType.label),
                       const SizedBox(height: 10),
                       _TaskPicker(
@@ -165,6 +178,8 @@ class _SetupScreenState extends State<SetupScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                _whoIsReading(),
                 const SizedBox(height: 16),
                 const NoticeCard(
                   icon: Icons.info_outline_rounded,
@@ -195,17 +210,68 @@ class _SetupScreenState extends State<SetupScreen> {
                     text: _error!,
                   ),
                 ],
-                const SizedBox(height: 22),
-                PrimaryButton(
-                  label: 'Calibrar e começar',
-                  icon: Icons.play_arrow_rounded,
-                  onPressed: _begin,
-                ),
               ],
             ),
           ),
         ),
       );
+
+  Widget _whoIsReading() {
+    if (_loadingRoster) {
+      return const AppCard(
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final roster = _roster;
+    if (roster == null) {
+      return AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Nenhuma turma neste aparelho', style: AppType.title),
+            const SizedBox(height: 8),
+            Text(
+              'No painel do professor, em “Alunos e turmas”, exporte a lista '
+              'da turma e envie o arquivo para este celular.',
+              style: AppType.body.copyWith(color: Palette.inkMuted),
+            ),
+            const SizedBox(height: 16),
+            PrimaryButton(
+              label: 'Importar lista da turma',
+              icon: Icons.group_add_rounded,
+              onPressed: _importRoster,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Quem vai ler hoje?', style: AppType.title),
+              ),
+              TextButton(
+                onPressed: _importRoster,
+                child: const Text('Trocar turma'),
+              ),
+            ],
+          ),
+          Text(
+            '${roster.className} · toque no seu nome',
+            style: AppType.body.copyWith(color: Palette.inkMuted),
+          ),
+          const SizedBox(height: 14),
+          StudentPicker(roster: roster, onSelected: _studentSelected),
+        ],
+      ),
+    );
+  }
 }
 
 /// O cabeçalho de marca da tela inicial.

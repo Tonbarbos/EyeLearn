@@ -28,6 +28,11 @@ from eyelearn.storage.store import Store  # noqa: E402
 
 FIXTURE = REPOSITORY_ROOT / "mobile" / "eyelearn_core" / "assets" / "roster_example.json"
 
+#: A pré-visualização no navegador usa a mesma lista, e mostra os PINs na tela
+#: para quem a experimenta. Copiada pelo mesmo motivo do modelo: o pacote Dart
+#: puro não declara ativos Flutter.
+DEMO_ROSTER = REPOSITORY_ROOT / "mobile" / "eyelearn_app" / "assets" / "demo_roster.json"
+
 STUDENTS = [
     ("Ana Luiza Souza", "2580"),
     ("Bruno Lima", "9031"),
@@ -47,12 +52,13 @@ def main() -> int:
     roster = store.roster(teacher, classroom.id)
     store.close()
 
-    FIXTURE.write_text(
+    text = (
         json.dumps({"roster": roster, "pins_for_tests": pins}, ensure_ascii=False, indent=2)
-        + "\n",
-        encoding="utf-8",
+        + "\n"
     )
-    print(f"escrito: {FIXTURE}")
+    for path in (FIXTURE, DEMO_ROSTER):
+        path.write_text(text, encoding="utf-8")
+        print(f"escrito: {path}")
     return 0
 
 

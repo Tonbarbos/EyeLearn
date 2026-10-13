@@ -16,6 +16,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ import 'src/gaze/synthetic_gaze_source.dart';
 import 'src/ui/calibration_screen.dart';
 import 'src/ui/finished_screen.dart';
 import 'src/ui/reading_screen.dart';
+import 'src/ui/student_login.dart';
 import 'src/ui/theme.dart';
 import 'src/ui/widgets.dart';
 
@@ -36,13 +38,28 @@ Future<void> main() async {
     await rootBundle.loadString('assets/model.json'),
   );
 
-  runApp(DemoApp(artifact: artifact));
+  // A lista fictícia vem com os PINs ao lado, para quem experimenta saber o
+  // que digitar. No aplicativo real a lista não tem PIN em claro nenhum.
+  final demo =
+      jsonDecode(await rootBundle.loadString('assets/demo_roster.json'))
+          as Map<String, dynamic>;
+  final roster = Roster.fromJson(demo['roster'] as Map<String, dynamic>);
+  final pins = (demo['pins_for_tests'] as Map).cast<String, String>();
+
+  runApp(DemoApp(artifact: artifact, roster: roster, pins: pins));
 }
 
 class DemoApp extends StatelessWidget {
   final ModelArtifact artifact;
+  final Roster roster;
+  final Map<String, String> pins;
 
-  const DemoApp({super.key, required this.artifact});
+  const DemoApp({
+    super.key,
+    required this.artifact,
+    required this.roster,
+    required this.pins,
+  });
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -52,17 +69,24 @@ class DemoApp extends StatelessWidget {
           colorSchemeSeed: const Color(0xFF1565C0),
           useMaterial3: true,
         ),
-        home: DemoFlow(artifact: artifact),
+        home: DemoFlow(artifact: artifact, roster: roster, pins: pins),
       );
 }
 
 /// Etapas da pré-visualização.
-enum DemoStage { intro, calibrating, reading, finished }
+enum DemoStage { intro, login, calibrating, reading, finished }
 
 class DemoFlow extends StatefulWidget {
   final ModelArtifact artifact;
+  final Roster roster;
+  final Map<String, String> pins;
 
-  const DemoFlow({super.key, required this.artifact});
+  const DemoFlow({
+    super.key,
+    required this.artifact,
+    required this.roster,
+    required this.pins,
+  });
 
   @override
   State<DemoFlow> createState() => _DemoFlowState();
@@ -71,11 +95,13 @@ class DemoFlow extends StatefulWidget {
 class _DemoFlowState extends State<DemoFlow> {
   final _source = SyntheticGazeSource();
   final _passage = passages[1]; // "Uma história": texto com sentido.
+  final _limiter = PinAttemptLimiter();
 
   DemoStage _stage = DemoStage.intro;
   GazeCalibration? _calibration;
   Session? _session;
   Timer? _script;
+  String _participantCode = 'DEMO01';
 
   @override
   void dispose() {
@@ -84,7 +110,24 @@ class _DemoFlowState extends State<DemoFlow> {
     super.dispose();
   }
 
-  void _begin() => setState(() => _stage = DemoStage.calibrating);
+  void _begin() => setState(() => _stage = DemoStage.login);
+
+  Future<void> _studentSelected(RosterStudent student) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => PinScreen(
+            student: student,
+            limiter: _limiter,
+            onAccepted: () {
+              Navigator.of(context).pop();
+              setState(() {
+                _participantCode = student.code;
+                _stage = DemoStage.calibrating;
+              });
+            },
+          ),
+        ),
+      );
 
   /// Conduz o olhar sintético pelas linhas do texto.
   ///
@@ -151,7 +194,7 @@ class _DemoFlowState extends State<DemoFlow> {
     final analysis = analyse(trace, widget.artifact.preprocessing);
     setState(() {
       _session = Session.fromAnalysis(
-        participantCode: 'DEMO01',
+        participantCode: _participantCode,
         task: _passage.id,
         startedAt: DateTime.now(),
         durationSeconds: trace.duration,
@@ -168,6 +211,11 @@ class _DemoFlowState extends State<DemoFlow> {
   Widget build(BuildContext context) => switch (_stage) {
         DemoStage.intro =>
           _IntroScreen(artifact: widget.artifact, onStart: _begin),
+        DemoStage.login => _DemoLoginScreen(
+            roster: widget.roster,
+            pins: widget.pins,
+            onSelected: _studentSelected,
+          ),
         DemoStage.calibrating => CalibrationScreen(
             channel: _source,
             onCalibrated: _onCalibrated,
@@ -265,6 +313,13 @@ class _IntroScreen extends StatelessWidget {
                       SizedBox(height: 10),
                       NumberedStep(
                         number: 1,
+                        title: 'Entrada',
+                        detail:
+                            'A criança toca no próprio nome e digita o PIN de '
+                            'quatro dígitos. A lista vem do painel do professor.',
+                      ),
+                      NumberedStep(
+                        number: 2,
                         title: 'Calibração',
                         detail:
                             'Cinco alvos. O olhar sintético segue cada um, e o '
@@ -272,7 +327,7 @@ class _IntroScreen extends StatelessWidget {
                             'íris para a tela.',
                       ),
                       NumberedStep(
-                        number: 2,
+                        number: 3,
                         title: 'Leitura',
                         detail:
                             'Seis linhas. O percurso avança com fixações de cerca '
@@ -280,7 +335,7 @@ class _IntroScreen extends StatelessWidget {
                             'de linha.',
                       ),
                       NumberedStep(
-                        number: 3,
+                        number: 4,
                         title: 'Fim',
                         detail:
                             'A criança vê que terminou, e nada mais. A qualidade '
@@ -315,6 +370,59 @@ class _IntroScreen extends StatelessWidget {
                   label: 'Começar a pré-visualização',
                   icon: Icons.play_arrow_rounded,
                   onPressed: onStart,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+/// A escolha do nome, como na tela inicial do aplicativo, com os PINs da turma
+/// fictícia à vista.
+class _DemoLoginScreen extends StatelessWidget {
+  final Roster roster;
+  final Map<String, String> pins;
+  final ValueChanged<RosterStudent> onSelected;
+
+  const _DemoLoginScreen({
+    required this.roster,
+    required this.pins,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('Quem vai ler hoje?', style: AppType.title),
+                      Text(
+                        '${roster.className} · toque no seu nome',
+                        style: AppType.body.copyWith(color: Palette.inkMuted),
+                      ),
+                      const SizedBox(height: 14),
+                      StudentPicker(roster: roster, onSelected: onSelected),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                NoticeCard(
+                  icon: Icons.key_rounded,
+                  tint: const Color(0xFF9A5B00),
+                  background: Palette.amberSoft,
+                  text: 'Turma fictícia. PINs: '
+                      '${[
+                    for (final s in roster.students)
+                      '${s.displayName} ${pins[s.code]}',
+                  ].join(' · ')}',
                 ),
               ],
             ),
