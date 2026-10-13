@@ -39,4 +39,4 @@ mobile/eyelearn_app/android/local.properties
 mobile/eyelearn_app/android/.gradle/
 mobile/eyelearn_app/android/app/src/main/java/
 *.iml
-resultados/
+/resultados/
