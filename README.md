@@ -52,6 +52,7 @@ eyelearn/
   experiments/                 curva de degradação
   export/                      modelo portátil e vetores de ouro para o celular
   session.py                   importa as sessões do celular, compara a turma
+  storage/                     SQLite local: credenciais (scrypt) e migrações
   panel/                       painel do professor (PyQt6 + Matplotlib)
   synthetic.py                 percursos sintéticos com estrutura conhecida
 tests/                         suíte de testes
@@ -110,6 +111,7 @@ oferece.
 | `test_export.py` | o modelo portátil reproduz o scikit-learn |
 | `test_session.py` | importação das sessões e comparação intraturma |
 | `test_panel.py` | gráfico do painel, e que ele descreve sem diagnosticar |
+| `test_storage.py` | hash de senha e PIN, limite de tentativas, migrações atômicas |
 
 ```bash
 python -m pytest --cov --cov-report=term-missing   # cobertura
