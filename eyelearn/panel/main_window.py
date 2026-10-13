@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
 
 from eyelearn.panel import charts, theme
 from eyelearn.panel.accounts import StudentsDialog
+from eyelearn.panel.activity import ActivityDialog
 from eyelearn.session import (
     ClassComparison,
     Session,
@@ -163,7 +164,12 @@ class PanelWindow(QWidget):
             self._class_box.currentIndexChanged.connect(lambda _: self.load_class())
             layout.addWidget(self._class_box)
 
+            self._activity_button = QPushButton("Abrir atividade…")
+            self._activity_button.clicked.connect(self._open_activity)
+            layout.addWidget(self._activity_button)
+
             self._import_button = QPushButton("Importar sessões…")
+            self._import_button.setProperty("variant", "ghost")
             self._import_button.clicked.connect(self._choose_session_files)
             layout.addWidget(self._import_button)
 
@@ -245,6 +251,7 @@ class PanelWindow(QWidget):
         self._class_box.setCurrentIndex(max(index, 0))
         self._class_box.blockSignals(False)
         self._import_button.setEnabled(self._class_box.count() > 0)
+        self._activity_button.setEnabled(self._class_box.count() > 0)
         self.load_class()
 
     def load_class(self) -> None:
@@ -272,6 +279,15 @@ class PanelWindow(QWidget):
             return
         report = self.import_files([Path(path) for path in chosen])
         QMessageBox.information(self, "Importação", describe_import(report))
+
+    def _open_activity(self) -> None:
+        ActivityDialog(
+            self._store,
+            self._teacher,
+            self._class_box.currentData(),
+            self._class_box.currentText(),
+            parent=self,
+        ).exec()
 
     def _open_students(self) -> None:
         dialog = StudentsDialog(
@@ -473,6 +489,12 @@ def describe_import(report: ImportReport) -> str:
         lines.append(
             f"{len(report.unknown_codes)} de código que não é de aluno seu ({codes}): "
             "confira se a lista no celular é desta turma."
+        )
+    if report.wrong_activity:
+        lines.append(
+            f"{len(report.wrong_activity)} de atividade que não é desta turma ou "
+            "desta tarefa, e não foram importadas: "
+            + ", ".join(report.wrong_activity)
         )
     if report.unreadable:
         lines.append(

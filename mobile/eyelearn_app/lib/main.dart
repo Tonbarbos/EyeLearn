@@ -1,9 +1,10 @@
 /// Aplicativo do aluno.
 ///
-/// O fluxo é: o adulto importa uma vez a lista da turma que o painel exportou e
-/// escolhe a atividade; a criança toca no próprio nome e digita o PIN, calibra
-/// seguindo uma bolinha e lê o texto; o adulto compartilha o arquivo de sessão
-/// com o professor.
+/// O fluxo é: o adulto importa uma vez a lista da turma que o painel exportou;
+/// a cada atividade, o celular lê o QR que o professor projeta -- o que prova
+/// que a criança está na sala e diz qual é a tarefa --; a criança toca no
+/// próprio nome e digita o PIN, calibra seguindo uma bolinha e lê o texto; o
+/// adulto compartilha o arquivo de sessão com o professor.
 ///
 /// A criança nunca vê resultado. A tela final diz que ela terminou, e é tudo --
 /// ver mais que isso seria receber um rótulo de um modelo cujo valor preditivo
@@ -22,6 +23,7 @@ import 'src/session/session_export.dart';
 import 'src/ui/calibration_screen.dart';
 import 'src/ui/finished_screen.dart';
 import 'src/ui/reading_screen.dart';
+import 'src/ui/scan_screen.dart';
 import 'src/ui/student_login.dart';
 import 'src/ui/theme.dart';
 import 'src/ui/widgets.dart';
@@ -52,9 +54,9 @@ class EyeLearnApp extends StatelessWidget {
 
 /// Tela inicial.
 ///
-/// O adulto escolhe a atividade; a criança, o próprio nome. Não há cadastro de
-/// alunos no aplicativo: a lista vem pronta do painel, e o que sai daqui na
-/// sessão é o código do aluno, não o nome.
+/// A atividade vem do QR do professor; a criança escolhe o próprio nome. Não
+/// há cadastro de alunos no aplicativo: a lista vem pronta do painel, e o que
+/// sai daqui na sessão é o código do aluno e o da atividade, não o nome.
 class SetupScreen extends StatefulWidget {
   final ModelArtifact artifact;
 
@@ -69,7 +71,7 @@ class _SetupScreenState extends State<SetupScreen> {
   /// no nome de novo não zera a contagem de tentativas.
   final _limiter = PinAttemptLimiter();
 
-  Passage _passage = passages.first;
+  ActivityTicket? _ticket;
   Roster? _roster;
   bool _loadingRoster = true;
   String? _error;
@@ -93,6 +95,7 @@ class _SetupScreenState extends State<SetupScreen> {
       if (roster == null || !mounted) return;
       setState(() {
         _roster = roster;
+        _ticket = null; // o QR lido era da turma anterior
         _error = null;
       });
     } on FormatException catch (error) {
@@ -103,6 +106,26 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
+  Future<void> _scan() async {
+    final roster = _roster;
+    if (roster == null) return;
+    final ticket = await scanActivity(context, roster);
+    if (ticket != null && mounted) {
+      setState(() {
+        _ticket = ticket;
+        _error = null;
+      });
+    }
+  }
+
+  /// A atividade lida, se a entrada ainda estiver aberta.
+  ActivityTicket? get _openTicket {
+    final ticket = _ticket;
+    return ticket != null && ticket.isOpenAt(DateTime.now().toUtc())
+        ? ticket
+        : null;
+  }
+
   Future<void> _studentSelected(RosterStudent student) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -111,7 +134,16 @@ class _SetupScreenState extends State<SetupScreen> {
           limiter: _limiter,
           onAccepted: () {
             Navigator.of(context).pop();
-            _begin(student.code);
+            final ticket = _openTicket;
+            if (ticket == null) {
+              // A entrada fechou enquanto a criança digitava o PIN.
+              setState(() {
+                _ticket = null;
+                _error = 'A entrada na atividade fechou. Leia o QR de novo.';
+              });
+              return;
+            }
+            _begin(student.code, ticket);
           },
         ),
       ),
@@ -121,7 +153,7 @@ class _SetupScreenState extends State<SetupScreen> {
   bool get _trainedOnSyntheticData =>
       widget.artifact.metadata['training_data'] == 'synthetic';
 
-  Future<void> _begin(String code) async {
+  Future<void> _begin(String code, ActivityTicket ticket) async {
     final status = await Permission.camera.request();
     if (!status.isGranted) {
       setState(
@@ -143,9 +175,10 @@ class _SetupScreenState extends State<SetupScreen> {
               builder: (context) => _ReadingFlow(
                 channel: channel,
                 calibration: calibration,
-                passage: _passage,
+                passage: passageById(ticket.task),
                 artifact: widget.artifact,
                 participantCode: code,
+                activityCode: ticket.activityCode,
               ),
             ),
           ),
@@ -164,21 +197,6 @@ class _SetupScreenState extends State<SetupScreen> {
               children: [
                 const _Hero(),
                 const SizedBox(height: 26),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text('Atividade', style: AppType.label),
-                      const SizedBox(height: 10),
-                      _TaskPicker(
-                        selected: _passage,
-                        onChanged: (passage) =>
-                            setState(() => _passage = passage),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
                 _whoIsReading(),
                 const SizedBox(height: 16),
                 const NoticeCard(
@@ -247,29 +265,34 @@ class _SetupScreenState extends State<SetupScreen> {
       );
     }
 
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Quem vai ler hoje?', style: AppType.title),
-              ),
-              TextButton(
-                onPressed: _importRoster,
-                child: const Text('Trocar turma'),
-              ),
-            ],
+    final ticket = _openTicket;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ActivityCard(
+          className: roster.className,
+          ticket: ticket,
+          onScan: _scan,
+          onChangeClass: _importRoster,
+        ),
+        if (ticket != null) ...[
+          const SizedBox(height: 16),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Quem vai ler hoje?', style: AppType.title),
+                Text(
+                  'Toque no seu nome',
+                  style: AppType.body.copyWith(color: Palette.inkMuted),
+                ),
+                const SizedBox(height: 14),
+                StudentPicker(roster: roster, onSelected: _studentSelected),
+              ],
+            ),
           ),
-          Text(
-            '${roster.className} · toque no seu nome',
-            style: AppType.body.copyWith(color: Palette.inkMuted),
-          ),
-          const SizedBox(height: 14),
-          StudentPicker(roster: roster, onSelected: _studentSelected),
         ],
-      ),
+      ],
     );
   }
 }
@@ -313,93 +336,6 @@ class _Hero extends StatelessWidget {
       );
 }
 
-/// Escolha da atividade, em cartões tocáveis.
-///
-/// Em vez de uma lista suspensa: o adulto escolhe de pé, ao lado da criança,
-/// e três alvos grandes são mais rápidos que abrir um menu.
-class _TaskPicker extends StatelessWidget {
-  final Passage selected;
-  final ValueChanged<Passage> onChanged;
-
-  const _TaskPicker({required this.selected, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          for (final passage in passages)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _TaskOption(
-                passage: passage,
-                selected: passage.id == selected.id,
-                onTap: () => onChanged(passage),
-              ),
-            ),
-        ],
-      );
-}
-
-class _TaskOption extends StatelessWidget {
-  final Passage passage;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _TaskOption({
-    required this.passage,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(Shapes.chipRadius + 2),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            decoration: BoxDecoration(
-              color: selected ? Palette.brandSoft : Palette.background,
-              borderRadius: BorderRadius.circular(Shapes.chipRadius + 2),
-              border: Border.all(
-                color: selected ? Palette.brand : Colors.transparent,
-                width: 1.8,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  selected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: 21,
-                  color: selected ? Palette.brand : Palette.inkMuted,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    passage.title,
-                    style: AppType.body.copyWith(
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                      color: selected ? Palette.brandDeep : Palette.ink,
-                    ),
-                  ),
-                ),
-                Text(
-                  '${passage.lines.length} linhas',
-                  style: AppType.body.copyWith(
-                    fontSize: 12.5,
-                    color: Palette.inkMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-}
-
 /// Liga a leitura à exportação.
 class _ReadingFlow extends StatelessWidget {
   final GazeChannel channel;
@@ -407,6 +343,7 @@ class _ReadingFlow extends StatelessWidget {
   final Passage passage;
   final ModelArtifact artifact;
   final String participantCode;
+  final String activityCode;
 
   const _ReadingFlow({
     required this.channel,
@@ -414,6 +351,7 @@ class _ReadingFlow extends StatelessWidget {
     required this.passage,
     required this.artifact,
     required this.participantCode,
+    required this.activityCode,
   });
 
   @override
@@ -428,6 +366,7 @@ class _ReadingFlow extends StatelessWidget {
         final analysis = analyse(trace, artifact.preprocessing);
         final exported = await exportSession(
           participantCode: participantCode,
+          activityCode: activityCode,
           task: passage.id,
           startedAt: startedAt,
           trace: trace,

@@ -33,6 +33,7 @@ dependencies:
   share_plus: ^10.0.2
   path_provider: ^2.1.4
   file_picker: ^11.0.3
+  mobile_scanner: ^7.4.2
 
 dev_dependencies:
   flutter_test:

@@ -14,12 +14,12 @@ import secrets
 import sqlite3
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from eyelearn.session import Session, session_from_dict
-from eyelearn.storage import auth, db
+from eyelearn.storage import auth, db, ticket
 from eyelearn.storage.schema import MIGRATIONS
 
 #: Alfabeto do código do aluno: sem 0/O, 1/I/L, que se confundem quando o
@@ -28,7 +28,14 @@ CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
 
 ROSTER_FORMAT = "eyelearn-turma"
-ROSTER_FORMAT_VERSION = 1
+#: Versão 2 acrescenta o identificador e a chave da turma, que o celular usa
+#: para conferir o QR da atividade. Uma lista da versão 1 não tem com que
+#: conferir, e o celular a recusa.
+ROSTER_FORMAT_VERSION = 2
+
+#: Quanto tempo a entrada fica aberta, por padrão. Curto de propósito: uma foto
+#: do QR mandada para fora da sala só funciona dentro deste prazo.
+DEFAULT_ACTIVITY_MINUTES = 15
 
 
 @functools.cache
@@ -99,6 +106,25 @@ class ImportReport:
     duplicates: list[str] = field(default_factory=list)
     unknown_codes: list[str] = field(default_factory=list)
     unreadable: list[str] = field(default_factory=list)
+    #: Sessões que dizem vir de uma atividade que não é da turma do aluno.
+    wrong_activity: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Activity:
+    """Atividade aberta: o que o painel mostra enquanto a entrada está aberta."""
+
+    id: int
+    class_id: int
+    code: str
+    task: str
+    opened_at: datetime
+    expires_at: datetime
+    qr_text: str
+
+
+class ActivityMismatchError(ValueError):
+    """A sessão cita uma atividade que não é da turma do aluno."""
 
 
 def default_database_path() -> Path:
@@ -226,9 +252,10 @@ class Store:
         try:
             with self.connection:
                 cursor = self.connection.execute(
-                    "INSERT INTO turmas (professor_id, nome, escola, serie)"
-                    " VALUES (?, ?, ?, ?)",
-                    (teacher.id, name, school or None, grade or None),
+                    "INSERT INTO turmas (professor_id, nome, escola, serie, uid, chave)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (teacher.id, name, school or None, grade or None,
+                     secrets.token_hex(8), secrets.token_hex(32)),
                 )
         except sqlite3.IntegrityError as error:
             raise ValueError(f"a turma {name!r} já existe ou está sem nome") from error
@@ -325,20 +352,39 @@ class Store:
             ValueError: se o formato for inválido (validado por
                 :func:`eyelearn.session.session_from_dict`).
             NotFoundError: se o código não for de aluno deste professor.
+            ActivityMismatchError: se a sessão citar atividade que não é da
+                turma do aluno, ou de outra tarefa.
+
+        Sessão sem ``activity_code`` é aceita sem vínculo: é o formato das
+        sessões gravadas antes da entrada por QR e das de demonstração.
         """
         session = session_from_dict(payload)
         row = self.connection.execute(
-            "SELECT a.id FROM alunos a JOIN turmas t ON t.id = a.turma_id"
+            "SELECT a.id, a.turma_id FROM alunos a JOIN turmas t ON t.id = a.turma_id"
             " WHERE a.codigo = ? AND t.professor_id = ?",
             (session.participant_code, teacher.id),
         ).fetchone()
         if row is None:
             raise NotFoundError(session.participant_code)
+
+        activity_id = None
+        activity_code = payload.get("activity_code")
+        if activity_code is not None:
+            activity = self.connection.execute(
+                "SELECT id, tarefa FROM atividades WHERE codigo = ? AND turma_id = ?",
+                (str(activity_code), row["turma_id"]),
+            ).fetchone()
+            if activity is None or activity["tarefa"] != session.task:
+                raise ActivityMismatchError(session.participant_code)
+            activity_id = activity["id"]
+
         with self.connection:
             cursor = self.connection.execute(
-                "INSERT OR IGNORE INTO sessoes (aluno_id, tarefa, iniciada_em, dados)"
-                " VALUES (?, ?, ?, ?)",
-                (row["id"], session.task, session.started_at, json.dumps(payload)),
+                "INSERT OR IGNORE INTO sessoes"
+                " (aluno_id, tarefa, iniciada_em, dados, atividade_id)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (row["id"], session.task, session.started_at, json.dumps(payload),
+                 activity_id),
             )
         return cursor.rowcount == 1
 
@@ -359,6 +405,8 @@ class Store:
                     report.duplicates.append(Path(path).name)
             except NotFoundError as error:
                 report.unknown_codes.append(str(error.args[0]))
+            except ActivityMismatchError:
+                report.wrong_activity.append(Path(path).name)
             except (OSError, ValueError, KeyError, TypeError, AttributeError):
                 report.unreadable.append(Path(path).name)
         return report
@@ -399,10 +447,16 @@ class Store:
             ).fetchall()
         )
         names = display_names([s.full_name for s in students])
+        uid, key = self._class_secret(class_id)
         return {
             "format": ROSTER_FORMAT,
             "format_version": ROSTER_FORMAT_VERSION,
             "class_name": classroom.name,
+            "class_uid": uid,
+            # Confere a assinatura do QR da atividade. Quem tem esta lista
+            # consegue fabricar QR desta turma -- daí ela ir só para os
+            # aparelhos da turma, como o próprio PIN.
+            "activity_key": key,
             "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "students": sorted(
                 (
@@ -413,7 +467,55 @@ class Store:
             ),
         }
 
+    # -- atividades ----------------------------------------------------------
+
+    def open_activity(
+        self,
+        teacher: Teacher,
+        class_id: int,
+        task: str,
+        minutes: int = DEFAULT_ACTIVITY_MINUTES,
+        now: datetime | None = None,
+    ) -> Activity:
+        """Abre a entrada na atividade e devolve o QR para projetar."""
+        self._own_class(teacher, class_id)
+        if not 1 <= minutes <= 120:
+            raise ValueError("a entrada fica aberta entre 1 e 120 minutos")
+        now = (now or datetime.now(UTC)).replace(microsecond=0)
+        expires = now + timedelta(minutes=minutes)
+        uid, key = self._class_secret(class_id)
+        code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
+        qr_text = ticket.issue(uid, key, code, task, expires)
+        with self.connection:
+            cursor = self.connection.execute(
+                "INSERT INTO atividades (turma_id, codigo, tarefa, aberta_em, expira_em)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (class_id, code, task, now.isoformat(), expires.isoformat()),
+            )
+        return Activity(cursor.lastrowid, class_id, code, task, now, expires, qr_text)
+
+    def close_activity(self, teacher: Teacher, activity: Activity,
+                       now: datetime | None = None) -> None:
+        """Encerra a entrada antes do prazo.
+
+        Quem já entrou continua: o celular confere o QR na entrada, não durante
+        a leitura. O registro passa a dizer quando a entrada fechou de fato.
+        """
+        self._own_class(teacher, activity.class_id)
+        now = (now or datetime.now(UTC)).replace(microsecond=0)
+        with self.connection:
+            self.connection.execute(
+                "UPDATE atividades SET expira_em = min(expira_em, ?) WHERE id = ?",
+                (now.isoformat(), activity.id),
+            )
+
     # -- auxiliares ----------------------------------------------------------
+
+    def _class_secret(self, class_id: int) -> tuple[str, str]:
+        row = self.connection.execute(
+            "SELECT uid, chave FROM turmas WHERE id = ?", (class_id,)
+        ).fetchone()
+        return row["uid"], row["chave"]
 
     def _own_class(self, teacher: Teacher, class_id: int) -> Classroom:
         row = self.connection.execute(

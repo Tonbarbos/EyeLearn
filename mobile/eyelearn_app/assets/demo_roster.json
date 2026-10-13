@@ -1,36 +1,46 @@
 {
   "roster": {
     "format": "eyelearn-turma",
-    "format_version": 1,
+    "format_version": 2,
     "class_name": "5º A (exemplo)",
-    "exported_at": "2026-10-13T16:25:28+00:00",
+    "class_uid": "554107a058c1f692",
+    "activity_key": "87e31cf9d3923db152e9f1e453ba5b4cf19d12f29e4bdae5eeea06d43deb3260",
+    "exported_at": "2026-10-13T17:37:18+00:00",
     "students": [
       {
-        "code": "FCE2XB",
+        "code": "H4VVPQ",
         "display_name": "Ana P.",
-        "pin_hash": "pbkdf2-sha256$20000$8c43ecb6f0e3965aba0a0f7afc61ed22$6427909da63c067ff8fd55e28afc663555b1fc74d0c1887511cac687eadd440c"
+        "pin_hash": "pbkdf2-sha256$20000$dbdff26b06282f6a5b6c1b3194e90041$2bb9e429894e87af2a1ec991c2c6bd31eafadfe97cfa716546c0b5175f550591"
       },
       {
-        "code": "EYD59Q",
+        "code": "24GKK8",
         "display_name": "Ana S.",
-        "pin_hash": "pbkdf2-sha256$20000$6c1b78cd05179416ff67e3fc84a38d89$b037bc9fd0cd01d1bedf2b3a241ab56deb9d2a2af6ed11eee9aeafc180155f94"
+        "pin_hash": "pbkdf2-sha256$20000$613a422b3571baf7bdb057be4da35cc5$fe42df2b66eeda87bd46cb63ccb36307e6f3989f0857279e6032cb09c7765d20"
       },
       {
-        "code": "AUXVHF",
+        "code": "QWXBY4",
         "display_name": "Bruno L.",
-        "pin_hash": "pbkdf2-sha256$20000$e15aaa38edfb413d4515caa36b309729$490259e138e9c5aa6afd67410c27b4fe4e1fae2adfa64884c404ec42da9192a5"
+        "pin_hash": "pbkdf2-sha256$20000$00fd86f40d260fb858e1fb1f43c2c67e$c4075477100c994a8df016ba30ca16f88b29f3a45ac3975163a7c208247f023b"
       },
       {
-        "code": "52UHHJ",
+        "code": "84434E",
         "display_name": "João S.",
-        "pin_hash": "pbkdf2-sha256$20000$e3e33815db2a39a9e38a3a331a0c4b5f$2d3c4ced8c6380cbeb232cf47e0c96b2a1c41b01da63032a03e4506a32e00a8d"
+        "pin_hash": "pbkdf2-sha256$20000$a48b69d4b025ef165b8cd07f384722d0$dd9abd33edeeeaa805d0350f91bf595eb728771ae1692ee77f2aa5144455868e"
       }
     ]
   },
   "pins_for_tests": {
-    "EYD59Q": "2580",
-    "AUXVHF": "9031",
-    "52UHHJ": "4719",
-    "FCE2XB": "0862"
+    "24GKK8": "2580",
+    "QWXBY4": "9031",
+    "84434E": "4719",
+    "H4VVPQ": "0862"
+  },
+  "tickets_for_tests": {
+    "valid": "EYELEARN1.554107a058c1f692.KMYX8X42.text.1791886500.DCP2v0X-sW9x38El9Dr05A",
+    "other_class": "EYELEARN1.5ef4cab94641fe2a.8Y7N6U5E.text.1791886500.vIi4jPxj9FnHia0neQhCng",
+    "activity_code": "KMYX8X42",
+    "task": "text",
+    "opened_at": "2026-10-13T10:00:00+00:00",
+    "expires_at": "2026-10-13T10:15:00+00:00"
   }
 }

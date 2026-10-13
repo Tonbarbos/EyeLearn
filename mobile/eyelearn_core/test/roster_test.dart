@@ -107,7 +107,15 @@ void main() {
     });
 
     test('recusa versão desconhecida', () {
-      final json = validRoster()..['format_version'] = 2;
+      final json = validRoster()..['format_version'] = 3;
+      expect(() => Roster.fromJson(json), throwsFormatException);
+    });
+
+    test('recusa a versão 1, que não tem a chave da turma', () {
+      final json = validRoster()
+        ..['format_version'] = 1
+        ..remove('class_uid')
+        ..remove('activity_key');
       expect(() => Roster.fromJson(json), throwsFormatException);
     });
 

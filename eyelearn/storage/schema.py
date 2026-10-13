@@ -85,4 +85,34 @@ MIGRATIONS: tuple[str, ...] = (
     CREATE INDEX sessoes_por_aluno ON sessoes (aluno_id);
     CREATE INDEX alunos_por_turma ON alunos (turma_id);
     """,
+    # 2 -- atividade aberta pelo professor, com entrada por QR.
+    #
+    # Cada turma ganha um identificador público e uma chave secreta. As duas
+    # vão para o celular na lista da turma; o QR da atividade leva o
+    # identificador e é assinado com a chave, que o celular usa para conferir
+    # que o QR veio do painel. Turmas criadas antes desta versão recebem os
+    # dois valores aqui mesmo.
+    """
+    ALTER TABLE turmas ADD COLUMN uid TEXT;
+    ALTER TABLE turmas ADD COLUMN chave TEXT;
+    UPDATE turmas
+       SET uid = lower(hex(randomblob(8))),
+           chave = lower(hex(randomblob(32)))
+     WHERE uid IS NULL;
+    CREATE UNIQUE INDEX turmas_por_uid ON turmas (uid);
+
+    CREATE TABLE atividades (
+        id         INTEGER PRIMARY KEY,
+        turma_id   INTEGER NOT NULL REFERENCES turmas(id) ON DELETE CASCADE,
+        -- Vai no QR e volta na sessão: é o que liga a gravação à atividade.
+        codigo     TEXT NOT NULL UNIQUE,
+        tarefa     TEXT NOT NULL,
+        aberta_em  TEXT NOT NULL,
+        expira_em  TEXT NOT NULL
+    );
+    CREATE INDEX atividades_por_turma ON atividades (turma_id);
+
+    ALTER TABLE sessoes ADD COLUMN atividade_id INTEGER
+        REFERENCES atividades(id) ON DELETE SET NULL;
+    """,
 )

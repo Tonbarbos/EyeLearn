@@ -25,9 +25,14 @@ const int sessionFormatVersion = 1;
 class Session {
   /// Identificador pseudônimo do participante.
   ///
-  /// Nunca o nome da criança. O aplicativo não tem cadastro: o professor
-  /// escolhe um código e mantém a correspondência fora dele.
+  /// Nunca o nome da criança: é o código do aluno na lista da turma, e a
+  /// correspondência com o nome fica no banco do professor.
   final String participantCode;
+
+  /// Código da atividade em que a criança entrou pelo QR, ou `null` para
+  /// sessões sem atividade (demonstração e formato anterior). O painel recusa
+  /// a sessão se a atividade não for da turma do aluno.
+  final String? activityCode;
 
   /// Nome da tarefa de leitura.
   final String task;
@@ -68,6 +73,7 @@ class Session {
     required this.features,
     required this.score,
     required this.modelMetadata,
+    this.activityCode,
   });
 
   /// Monta a sessão a partir da análise e do artefato usado.
@@ -80,9 +86,11 @@ class Session {
     required double validSampleRatio,
     required Map<String, double> features,
     required ModelArtifact artifact,
+    String? activityCode,
   }) =>
       Session(
         participantCode: participantCode,
+        activityCode: activityCode,
         task: task,
         startedAt: startedAt,
         durationSeconds: durationSeconds,
@@ -111,6 +119,7 @@ class Session {
   Map<String, dynamic> toJson() => {
         'format_version': sessionFormatVersion,
         'participant_code': participantCode,
+        if (activityCode != null) 'activity_code': activityCode,
         'task': task,
         'started_at': startedAt.toUtc().toIso8601String(),
         'duration_seconds': durationSeconds,
@@ -137,6 +146,7 @@ class Session {
     final rawFeatures = (json['features'] as Map<String, dynamic>);
     return Session(
       participantCode: json['participant_code'] as String,
+      activityCode: json['activity_code'] as String?,
       task: json['task'] as String,
       startedAt: DateTime.parse(json['started_at'] as String),
       durationSeconds: (json['duration_seconds'] as num).toDouble(),

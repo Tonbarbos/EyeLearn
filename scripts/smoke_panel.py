@@ -26,6 +26,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from eyelearn.panel.accounts import LoginDialog, StudentsDialog  # noqa: E402
+from eyelearn.panel.activity import ActivityDialog  # noqa: E402
 from eyelearn.panel.main_window import PanelWindow  # noqa: E402
 from eyelearn.storage.store import Store  # noqa: E402
 
@@ -47,6 +48,12 @@ def main(argv: list[str]) -> int:
         students = StudentsDialog(store, login.teacher, window._class_box.currentData())
         students.show()
         print(f"cadastro abriu: {students.table.rowCount()} alunos")
+        class_id = window._class_box.currentData()
+        activity = ActivityDialog(store, login.teacher, class_id, "5º A")
+        activity.show()
+        opened = activity.open_activity()
+        activity.close()
+        print(f"atividade abriu: QR de {len(opened.qr_text)} caracteres")
     else:
         folder = Path(argv[1]) if len(argv) > 1 else None
         window = PanelWindow(folder)

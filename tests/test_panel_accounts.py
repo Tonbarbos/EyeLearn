@@ -248,3 +248,62 @@ class TestDescribeImport:
 
     def test_clean_import_is_one_line(self):
         assert describe_import(ImportReport(imported=["a.json"])).count("\n") == 0
+
+
+class TestActivityDialog:
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    START = _datetime(2026, 10, 13, 10, 0, tzinfo=_UTC)
+
+    @pytest.fixture
+    def clock(self):
+        class Clock:
+            now = TestActivityDialog.START
+
+            def __call__(self):
+                return self.now
+
+        return Clock()
+
+    @pytest.fixture
+    def dialog(self, app, store, teacher, clock):
+        from eyelearn.panel.activity import ActivityDialog
+
+        classroom = store.create_class(teacher, "5º A")
+        return ActivityDialog(store, teacher, classroom.id, "5º A", clock=clock)
+
+    def test_opening_shows_the_qr(self, dialog):
+        dialog.task_box.setCurrentIndex(0)
+        activity = dialog.open_activity()
+        assert activity.task == "syllables"
+        assert dialog.pages.currentIndex() == 1
+        assert not dialog.qr_label.pixmap().isNull()
+        assert dialog.countdown.text() == "Entrada fecha em 15:00"
+
+    def test_countdown_and_expiry(self, dialog, clock):
+        from datetime import timedelta
+
+        dialog.open_activity()
+        clock.now = self.START + timedelta(minutes=14, seconds=1)
+        dialog.tick()
+        assert dialog.countdown.text() == "Entrada fecha em 00:59"
+        clock.now = self.START + timedelta(minutes=15)
+        dialog.tick()
+        assert dialog.countdown.text() == "Entrada fechada"
+        assert dialog.qr_label.pixmap().isNull()
+
+    def test_closing_the_window_closes_the_entry(self, dialog, store, clock):
+        from datetime import timedelta
+
+        dialog.open_activity()
+        clock.now = self.START + timedelta(minutes=3)
+        dialog.close_entry()
+        stored = store.connection.execute("SELECT expira_em FROM atividades").fetchone()[0]
+        assert stored == clock.now.isoformat()
+
+    def test_qr_image_is_not_degenerate(self, app):
+        from eyelearn.panel.activity import qr_pixmap
+
+        pixmap = qr_pixmap("EYELEARN1.abc.DEF.text.1.x", size=300)
+        assert pixmap.width() == 300

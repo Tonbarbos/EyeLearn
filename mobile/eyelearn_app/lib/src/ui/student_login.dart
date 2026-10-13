@@ -14,7 +14,9 @@ import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../activity/passages.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Cores dos círculos de inicial, em rodízio. Só as da marca: nenhum verde ou
 /// vermelho que soe como "certo" ou "errado" ao lado de um nome.
@@ -411,4 +413,105 @@ class _Key extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// O cartão da atividade na tela inicial.
+///
+/// Sem atividade lida, pede o QR. Com ela, mostra a tarefa e até quando a
+/// entrada fica aberta -- a tarefa vem do professor, não é escolhida aqui.
+class ActivityCard extends StatelessWidget {
+  final String className;
+  final ActivityTicket? ticket;
+  final VoidCallback onScan;
+  final VoidCallback? onChangeClass;
+
+  const ActivityCard({
+    super.key,
+    required this.className,
+    required this.ticket,
+    required this.onScan,
+    this.onChangeClass,
+  });
+
+  static String _clock(DateTime time) {
+    final local = time.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ticket = this.ticket;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(className.toUpperCase(), style: AppType.label),
+              ),
+              if (onChangeClass != null)
+                TextButton(
+                  onPressed: onChangeClass,
+                  child: const Text('Trocar turma'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (ticket == null) ...[
+            const Text('Leia o QR da atividade', style: AppType.title),
+            const SizedBox(height: 6),
+            Text(
+              'O professor abre a atividade no painel e mostra o QR na tela. '
+              'Só dá para entrar de dentro da sala.',
+              style: AppType.body.copyWith(color: Palette.inkMuted),
+            ),
+            const SizedBox(height: 16),
+            PrimaryButton(
+              label: 'Ler QR da atividade',
+              icon: Icons.qr_code_scanner_rounded,
+              onPressed: onScan,
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    color: Palette.brandSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.menu_book_rounded,
+                    color: Palette.brand,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        passageById(ticket.task).title,
+                        style: AppType.title,
+                      ),
+                      Text(
+                        'Entrada aberta até ${_clock(ticket.expiresAt)}',
+                        style: AppType.body.copyWith(
+                          color: Palette.inkMuted,
+                          fontSize: 14.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }

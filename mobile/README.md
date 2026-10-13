@@ -16,8 +16,15 @@ celular.
 O professor cadastra a turma no painel e exporta a **lista da turma**
 (`turma_*.eyelearn.json`). No celular, um adulto importa o arquivo uma vez, em
 **Importar lista da turma**; a lista fica no diretório de documentos do
-aplicativo. Depois disso, a tela inicial mostra os nomes: a criança toca no
-dela e digita o PIN de quatro dígitos num teclado próprio, de teclas grandes.
+aplicativo.
+
+A cada aula o celular lê o **QR da atividade** que o professor projeta
+(`lib/src/ui/scan_screen.dart`, com o `mobile_scanner` e o modelo do ML Kit
+embarcado, sem rede). O QR diz a tarefa e até quando a entrada fica aberta, e
+é conferido no aparelho (`eyelearn_core/lib/src/activity.dart`): assinatura
+com a chave da turma, turma certa e prazo. Só então aparecem os nomes: a
+criança toca no dela e digita o PIN de quatro dígitos num teclado próprio, de
+teclas grandes. A sessão sai com o código do aluno e o da atividade.
 
 - A lista leva só "Ana S.", o código e o hash do PIN. O nome completo fica no
   computador do professor, e a sessão sai do aparelho com o código.
@@ -170,7 +177,7 @@ retornos de linha que o modelo receberia. Ambos corrigidos, com testes.
 # Núcleo: roda em qualquer máquina
 cd mobile/eyelearn_core
 dart pub get
-dart test                       # 165 testes, inclui o diferencial e o do PIN
+dart test                       # 183 testes: diferencial, PIN e QR
 dart analyze
 
 # Regerar os ativos embarcados (do lado Python)
@@ -204,8 +211,8 @@ Antes do primeiro `flutter run`:
 ## O que esta sessão não conseguiu verificar
 
 O aplicativo **compila** (`flutter build web`) e `flutter analyze` passa sem
-observações; `flutter test` roda 25 testes de widget, entre eles os da tela do
-PIN. A pré-visualização no
+observações; `flutter test` roda 27 testes de widget, entre eles os da tela do
+PIN e do cartão da atividade. A pré-visualização no
 navegador foi executada e gravada de ponta a ponta.
 
 O que continua sem verificação é o caminho Android: `GazePlugin.kt`, o
@@ -213,4 +220,6 @@ O que continua sem verificação é o caminho Android: `GazePlugin.kt`, o
 o ambiente não tem o SDK do Android. Espere ajustes nas versões do MediaPipe
 Tasks Vision e do CameraX, e na conversão de quadro (`image.toBitmap()` exige
 CameraX recente). O iOS não está implementado. O `file_picker` também só foi
-exercitado no navegador.
+exercitado no navegador, e o leitor de QR (`mobile_scanner`) **nunca rodou**:
+no navegador a leitura é simulada, gerando o QR com a chave da turma e
+passando pela mesma conferência.

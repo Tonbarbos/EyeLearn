@@ -21,7 +21,7 @@ import 'package:crypto/crypto.dart';
 /// Identificador do formato. Tem de coincidir com `ROSTER_FORMAT` em
 /// `eyelearn/storage/store.py`.
 const rosterFormat = 'eyelearn-turma';
-const rosterFormatVersion = 1;
+const rosterFormatVersion = 2;
 
 const pinLength = 4;
 
@@ -42,11 +42,20 @@ class RosterStudent {
 
 class Roster {
   final String className;
+
+  /// Identificador público da turma; o QR da atividade traz o mesmo.
+  final String classUid;
+
+  /// Chave que confere a assinatura do QR. Ver `activity.dart`.
+  final String activityKey;
+
   final String exportedAt;
   final List<RosterStudent> students;
 
   const Roster({
     required this.className,
+    required this.classUid,
+    required this.activityKey,
     required this.exportedAt,
     required this.students,
   });
@@ -83,6 +92,8 @@ class Roster {
     }
     return Roster(
       className: json['class_name'] as String,
+      classUid: json['class_uid'] as String,
+      activityKey: json['activity_key'] as String,
       exportedAt: json['exported_at'] as String,
       students: List.unmodifiable(students),
     );

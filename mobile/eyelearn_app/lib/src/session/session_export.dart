@@ -28,6 +28,7 @@ class ExportedSession {
 /// acesso a dado comportamental de criança.
 Future<ExportedSession> exportSession({
   required String participantCode,
+  String? activityCode,
   required String task,
   required DateTime startedAt,
   required GazeTrace trace,
@@ -37,6 +38,7 @@ Future<ExportedSession> exportSession({
 }) async {
   final session = Session.fromAnalysis(
     participantCode: participantCode,
+    activityCode: activityCode,
     task: task,
     startedAt: startedAt,
     durationSeconds: trace.duration,

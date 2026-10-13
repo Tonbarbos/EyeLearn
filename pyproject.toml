@@ -29,6 +29,8 @@ capture = [
 panel = [
     "PyQt6>=6.6",
     "matplotlib>=3.8",
+    # Gera o QR de entrada na atividade. Python puro, sem dependências.
+    "segno>=1.6",
 ]
 test = [
     "matplotlib>=3.8",

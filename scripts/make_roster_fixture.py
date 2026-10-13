@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
@@ -50,10 +51,29 @@ def main() -> int:
         new = store.add_student(teacher, classroom.id, name, pin=pin)
         pins[new.student.code] = pin
     roster = store.roster(teacher, classroom.id)
+
+    # QR de atividade com instante fixo, para o Dart conferir a assinatura e o
+    # prazo contra o mesmo relógio. E um de outra turma, que tem de ser recusado.
+    opened = datetime(2026, 10, 13, 10, 0, tzinfo=UTC)
+    activity = store.open_activity(teacher, classroom.id, "text", minutes=15, now=opened)
+    other = store.create_class(teacher, "5º B (exemplo)")
+    other_activity = store.open_activity(teacher, other.id, "text", now=opened)
     store.close()
 
+    tickets = {
+        "valid": activity.qr_text,
+        "other_class": other_activity.qr_text,
+        "activity_code": activity.code,
+        "task": activity.task,
+        "opened_at": opened.isoformat(),
+        "expires_at": activity.expires_at.isoformat(),
+    }
     text = (
-        json.dumps({"roster": roster, "pins_for_tests": pins}, ensure_ascii=False, indent=2)
+        json.dumps(
+            {"roster": roster, "pins_for_tests": pins, "tickets_for_tests": tickets},
+            ensure_ascii=False,
+            indent=2,
+        )
         + "\n"
     )
     for path in (FIXTURE, DEMO_ROSTER):

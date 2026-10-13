@@ -102,6 +102,21 @@ class _DemoFlowState extends State<DemoFlow> {
   Session? _session;
   Timer? _script;
   String _participantCode = 'DEMO01';
+  ActivityTicket? _ticket;
+
+  /// Sem câmera no navegador, o "QR" é gerado aqui com a chave da turma
+  /// fictícia e passa pela mesma conferência que o aplicativo faz com o QR
+  /// lido -- assinatura, turma e prazo.
+  void _simulateScan() {
+    final now = DateTime.now().toUtc();
+    final text = ActivityTicket.issue(
+      roster: widget.roster,
+      activityCode: 'DEMO2026',
+      task: _passage.id,
+      expiresAt: now.add(const Duration(minutes: 15)),
+    );
+    setState(() => _ticket = ActivityTicket.verify(text, widget.roster, now));
+  }
 
   @override
   void dispose() {
@@ -195,6 +210,7 @@ class _DemoFlowState extends State<DemoFlow> {
     setState(() {
       _session = Session.fromAnalysis(
         participantCode: _participantCode,
+        activityCode: _ticket?.activityCode,
         task: _passage.id,
         startedAt: DateTime.now(),
         durationSeconds: trace.duration,
@@ -214,6 +230,8 @@ class _DemoFlowState extends State<DemoFlow> {
         DemoStage.login => _DemoLoginScreen(
             roster: widget.roster,
             pins: widget.pins,
+            ticket: _ticket,
+            onScan: _simulateScan,
             onSelected: _studentSelected,
           ),
         DemoStage.calibrating => CalibrationScreen(
@@ -315,8 +333,9 @@ class _IntroScreen extends StatelessWidget {
                         number: 1,
                         title: 'Entrada',
                         detail:
-                            'A criança toca no próprio nome e digita o PIN de '
-                            'quatro dígitos. A lista vem do painel do professor.',
+                            'O celular lê o QR que o professor projeta (aqui, '
+                            'simulado); a criança toca no próprio nome e digita '
+                            'o PIN de quatro dígitos.',
                       ),
                       NumberedStep(
                         number: 2,
@@ -383,11 +402,15 @@ class _IntroScreen extends StatelessWidget {
 class _DemoLoginScreen extends StatelessWidget {
   final Roster roster;
   final Map<String, String> pins;
+  final ActivityTicket? ticket;
+  final VoidCallback onScan;
   final ValueChanged<RosterStudent> onSelected;
 
   const _DemoLoginScreen({
     required this.roster,
     required this.pins,
+    required this.ticket,
+    required this.onScan,
     required this.onSelected,
   });
 
@@ -399,20 +422,28 @@ class _DemoLoginScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text('Quem vai ler hoje?', style: AppType.title),
-                      Text(
-                        '${roster.className} · toque no seu nome',
-                        style: AppType.body.copyWith(color: Palette.inkMuted),
-                      ),
-                      const SizedBox(height: 14),
-                      StudentPicker(roster: roster, onSelected: onSelected),
-                    ],
-                  ),
+                ActivityCard(
+                  className: roster.className,
+                  ticket: ticket,
+                  onScan: onScan,
                 ),
+                if (ticket != null) ...[
+                  const SizedBox(height: 16),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text('Quem vai ler hoje?', style: AppType.title),
+                        Text(
+                          'Toque no seu nome',
+                          style: AppType.body.copyWith(color: Palette.inkMuted),
+                        ),
+                        const SizedBox(height: 14),
+                        StudentPicker(roster: roster, onSelected: onSelected),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 NoticeCard(
                   icon: Icons.key_rounded,

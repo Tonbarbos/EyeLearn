@@ -149,8 +149,20 @@ python -m eyelearn.panel
 Na primeira vez, o painel pede para criar a conta de professor. Depois, em
 **Alunos e turmas**, o professor cria a turma, cadastra os alunos (cada um
 recebe um código e um PIN de 4 dígitos, mostrado uma vez) e exporta a **lista
-da turma** para o celular. No celular, a criança toca no próprio nome e digita o
-PIN. As sessões voltam como arquivos e entram no banco por **Importar sessões**.
+da turma** para o celular -- uma vez por turma.
+
+A cada aula, **Abrir atividade** escolhe a tarefa e mostra um QR para projetar,
+válido por 15 minutos. O celular só abre a atividade depois de ler esse QR:
+quem consegue ler a tela do professor está na sala. Não há rede, localização
+nem Bluetooth envolvidos. Depois do QR, a criança toca no próprio nome e
+digita o PIN. As sessões voltam como arquivos e entram no banco por
+**Importar sessões**, que recusa sessão de atividade de outra turma.
+
+O QR é assinado com uma chave da turma, que vai para o celular dentro da
+lista: sem ela não se fabrica QR nem se estende o prazo de um antigo. O que a
+assinatura não impede é uma foto do QR mandada para fora da sala, que funciona
+até a entrada fechar -- por isso o prazo é curto, e fechar a janela do QR
+encerra a entrada (quem já entrou continua).
 
 O banco é um arquivo SQLite na pasta de dados do usuário
 (`%APPDATA%\EyeLearn\eyelearn.db` no Windows, `~/.local/share/eyelearn/` no
@@ -174,7 +186,7 @@ EyeLearn-Apollo, que usava MySQL com as tabelas `Alunos`, `Sessoes` e
 | Antes (MySQL) | Agora (SQLite) | Motivo |
 |---|---|---|
 | servidor MySQL, senha no código | um arquivo, sem servidor | nada trafega pela rede; nada a configurar na escola |
-| sem login: o aluno escolhia o nome numa lista, o professor entrava direto | professor com usuário e senha; aluno com nome e PIN | um professor não vê os alunos de outro; uma criança não grava sessão no nome da colega |
+| sem login: o aluno escolhia o nome numa lista, o professor entrava direto | professor com usuário e senha; aluno com QR da aula, nome e PIN | um professor não vê os alunos de outro; uma criança não grava sessão no nome da colega nem fora da sala |
 | tabela `Diagnosticos` ("Possível TDAH", "Possível Dislexia") | não existe | o sistema não diagnostica, e o banco não tem onde gravar rótulo |
 | `genero` | não existe | nenhuma parte do pipeline usa (LGPD, art. 6º, III) |
 | escola, série e turma repetidas em cada aluno | tabela `turmas` | "5A" e "5º A" viravam duas turmas |
