@@ -52,6 +52,7 @@ eyelearn/
   experiments/                 curva de degradação
   export/                      modelo portátil e vetores de ouro para o celular
   session.py                   importa as sessões do celular, compara a turma
+  panel/                       painel do professor (PyQt6 + Matplotlib)
   synthetic.py                 percursos sintéticos com estrutura conhecida
 tests/                         suíte de testes
 scripts/                       geração dos ativos embarcados
@@ -108,6 +109,7 @@ oferece.
 | `test_experiment.py` | estrutura e aritmética da curva de degradação |
 | `test_export.py` | o modelo portátil reproduz o scikit-learn |
 | `test_session.py` | importação das sessões e comparação intraturma |
+| `test_panel.py` | gráfico do painel, e que ele descreve sem diagnosticar |
 
 ```bash
 python -m pytest --cov --cov-report=term-missing   # cobertura
@@ -123,6 +125,39 @@ diferente.
 cd mobile/eyelearn_core && dart test
 python scripts/build_mobile_assets.py --check      # ativos em dia
 ```
+
+## Painel do professor
+
+```bash
+pip install -e ".[panel]"
+python -m eyelearn.panel CAMINHO/DAS/SESSOES
+```
+
+Importa os arquivos JSON que o celular exporta, compara a turma e sugere
+adaptações. Para experimentar sem celular:
+
+```bash
+python scripts/make_demo_class.py --out /tmp/turma
+python -m eyelearn.panel /tmp/turma
+```
+
+O que o painel mostra, e o que ele recusa mostrar:
+
+- **Escore z por característica**, não a pontuação do modelo. A comparação é
+  contra a turma da criança, não contra um modelo clínico: o modelo foi
+  treinado numa base tcheca, e "lê mais devagar que a maioria dos colegas" é
+  acionável pelo professor enquanto "pontuação 0,62" não é.
+- **Sugestões de adaptação pedagógica**, nunca um rótulo de condição. Não há no
+  painel nenhuma tela, campo ou frase que atribua diagnóstico, e
+  `tests/test_panel.py` trata isso como requisito verificável.
+- **Gravações de qualidade ruim aparecem marcadas**, não escondidas. Uma sessão
+  que some sem explicação levaria o professor a repetir a atividade sem saber
+  por quê.
+- **Âmbar e violeta no gráfico, não verde e vermelho.** Estar acima da média em
+  duração de fixação é uma observação, não um defeito; o semáforo diria o
+  contrário. O par passa nos critérios de contraste e de separação para
+  daltonismo (ΔE 33 em protanopia), e quem sai da faixa da turma ganha contorno
+  — destaque que sobrevive à impressão em preto.
 
 ## Tecnologias
 
