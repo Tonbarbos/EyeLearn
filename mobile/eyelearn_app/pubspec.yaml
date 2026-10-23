@@ -1,0 +1,81 @@
+name: eyelearn_app
+description: >-
+  Aplicativo do aluno: a criança lê na tela enquanto a câmera frontal acompanha
+  o olhar. Não apresenta resultado nenhum à criança -- a saída pedagógica vai
+  para o painel do professor.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Só para desligar o tratamento de endereço no navegador (ver main.dart).
+  flutter_web_plugins:
+    sdk: flutter
+
+  # O núcleo de processamento e inferência, em Dart puro e já testado.
+  # Caminho local, não pacote publicado: os dois evoluem juntos, e uma versão
+  # do núcleo diferente da que gerou os ativos produziria predição errada.
+  eyelearn_core:
+    path: ../eyelearn_core
+
+  # Sem o pacote `camera`: o lado nativo já detém a câmera pelo CameraX, e abrir
+  # um segundo cliente sobre o mesmo sensor falha no Android. Uma
+  # pré-visualização para o adulto conferir o enquadramento teria de vir do lado
+  # nativo, como PlatformView -- está pendente.
+
+  # Permissão de câmera em tempo de execução.
+  permission_handler: ^11.3.1
+
+  # Compartilhamento do arquivo de sessão pela folha do sistema. É o que
+  # substitui um servidor: nada trafega pela rede.
+  share_plus: ^10.0.2
+  shared_preferences: ^2.5.6
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  # Sem isto, a fonte de ícones do Material não é embarcada e todo ícone sai
+  # como caixa vazia. O `flutter create` acrescenta por padrão; este pubspec
+  # foi escrito à mão.
+  uses-material-design: true
+
+  assets:
+    # Um modelo por tarefa, treinados no ETDD70 (scripts/build_mobile_assets.py).
+    - assets/model_syllables.json
+    - assets/model_text.json
+    - assets/model_pseudotext.json
+    # Só a pré-visualização no navegador usa. Turma fictícia.
+    - assets/demo_class.json
+
+  # O Roboto vai embutido, e não deixado ao padrão da plataforma, por uma razão
+  # de medida: o mesmo texto tem de ocupar a mesma largura em todo aparelho.
+  # Com a fonte variando, a amplitude das sacadas entre palavras variaria
+  # junto, e as características deixariam de ser comparáveis entre
+  # participantes que usaram celulares diferentes. É também o que faz a
+  # pré-visualização no navegador renderizar igual ao aparelho.
+  #
+  # Roboto é distribuído sob a licença Apache 2.0.
+  fonts:
+    # O texto de leitura, e só ele. Ver a nota acima: é instrumento de medida.
+    - family: Roboto
+      fonts:
+        - asset: fonts/Roboto-Regular.ttf
+        - asset: fonts/Roboto-Medium.ttf
+          weight: 500
+
+    # A interface à volta do estímulo: títulos, botões, rótulos. Outfit é uma
+    # geométrica de formas arredondadas, mais próxima do que uma criança de
+    # nove anos reconhece como "aplicativo" do que a fonte de sistema.
+    # Distribuída sob a SIL Open Font License (fonts/Outfit-LICENSE.txt).
+    - family: Outfit
+      fonts:
+        - asset: fonts/Outfit-Regular.ttf
+        - asset: fonts/Outfit-Bold.ttf
+          weight: 700

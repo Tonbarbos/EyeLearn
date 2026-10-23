@@ -1,0 +1,71 @@
+{
+  "fragment": "AQABAgMEBQYHCAkKCwwNDg8AAQIDBAUGBwgJCgs3kDFRO1s6K15AYTuzxR99BA29Og3DtXAl2yHEbd9xrY8fFehHLoQdyP7yoAGFEv7wHgF-LPdZYOBi_YAUoVsPcyxpjxJcwEZO8kz7X3CuBBsKm8Eanbsydb1NMoFBOGmqkQ9mv35o5T1pmMlGk8PEzj82jKaCFekohcw0Wz_HnhwBcXVq893nR3nM17VYPXojEy4GjNiGIhhYci7ySUm6RvXZyWzbRN0AuI1nxa0Ps6ZddmMUPboUyFXBYK8oz6BcPvhfUzb2KCVA0235KCAN1dKOrsjXcyuf8cjFT53t6m1oInlr0-yRkemHqHlFMtl6eADC-p6oEtXb-vPd4fvjLqGg5oj2lQvl1kBjF0Aw_cImuixfpGf-ViVL_wNs0AqYND0TLwyTsWxr0eQ4TLNb5XmKbubiO85u_dNDO6ndAKR5MNWDzQSiJ0BF_NVMWpslWkv5Gd5N5brSIg5BxCQBBQM3CgcfmuI2ZjzKivrXUgs9Qu6X4hMk6S_BDch08raGpCxRU3etzx5dOkkcdooIBdSgGk4xbYqRsNTqy9pGvYhgsnRDHRODVUd4eD74SM9Ogqz7jddjcQJkjlBuqQZhpYYdIDedRUgArwsgXxF1lXMcdK2R0gJOygxG6F0DDmxKwxz3XWQkHxa8srctkY9kgchArkfMNI_xxMebaRWtRoWqc8RkM-54K7O6Gs8CO6THQwi7Rek6HvsmEhwRsujFrBUv4yfNxTcThii_Qj1PXkBKqPUr0A9fj2zcP-m-Sb7J32uUoKI_m2XuhD6wf3IMbTUzj87jVrlZK2ci2xAdcLl0BusqpDp6RQVWVt-lZlaJ5RM3S1F84G3QpOIFaDMMusLTa4gX2NrMxqbmPo_taOlZ-qQ07BfxnZu4SQq9U_hJk5ch9er006kwAoryjzBUlAfKHW-dy0RfXAccN3wg1xzP92mCkRkpY3RzhJPElzPIFOeLZJTACipD5mRXV-U3sXPd0Khf4dFtf65vNiTsjgEwLDYNDR_hU2A3ruPz9eCWHcH1xpQlbYJn1VXXWFoI5xn7ZWl-3OZRuNYzkwOWDB-yiMrVOKACeeiyy5ia4CZrta_O3ZLUn7yzP7aHlgetYxmA32IIwpo",
+  "code": "K7Q2-XP4M",
+  "today": "2026-10-21",
+  "pins_for_tests": {
+    "JMSR6C": "2580",
+    "R82Y3A": "9031",
+    "CUQGRF": "4719",
+    "H8YCK5": "0862"
+  },
+  "expected": {
+    "format": "eyelearn-turma",
+    "format_version": 3,
+    "class_name": "5º A (exemplo)",
+    "class_uid": "07cd7fb8625dc000",
+    "exported_at": "2026-10-21T00:00:00+00:00",
+    "pin_iterations": 20000,
+    "students": [
+      [
+        "H8YCK5",
+        "Ana P.",
+        "Kp7r2IyKqNZzCVWkTNTWCw",
+        "zmQZJ5j3oUHqvd8BqQteM1f6Sl8AQm5chw6jOHZ9omw"
+      ],
+      [
+        "JMSR6C",
+        "Ana S.",
+        "3hYtLyU8keB5LVHQCKjkYQ",
+        "ZdtLxYqdtsIM64E6T5wPxn_8bpnSS8yG0XIJyhYFBvI"
+      ],
+      [
+        "R82Y3A",
+        "Bruno L.",
+        "3_tOEEChf90VE-sviaInRQ",
+        "kqIuA1rhNaRcViB61pLSYW9sRuFLMUq-bWTuKEo57Mc"
+      ],
+      [
+        "CUQGRF",
+        "João S.",
+        "ZqtVwUDM5xj9viMtnKik-g",
+        "VmYi3kv6Ju_C036sdrf1bljtlEEWv-V3S8-eMpp8zgU"
+      ]
+    ],
+    "activities": [
+      [
+        "K8CKU7A3",
+        "syllables",
+        "2026-10-15",
+        "2026-10-19T23:59:59+00:00"
+      ],
+      [
+        "RGVAZDH8",
+        "text",
+        "2026-10-15",
+        "2026-10-24T23:59:59+00:00"
+      ],
+      [
+        "SNXPKJ7V",
+        "pseudotext",
+        "2026-10-15",
+        "2026-10-27T23:59:59+00:00"
+      ],
+      [
+        "N65VX5TR",
+        "text",
+        "2026-10-26",
+        "2026-11-02T23:59:59+00:00"
+      ]
+    ]
+  }
+}

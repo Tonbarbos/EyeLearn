@@ -1,0 +1,202 @@
+name: testes
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # A versão mínima declarada no pyproject e a atual. Rodar as duas
+        # detecta uso acidental de recurso novo de linguagem.
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Instalar dependências
+        # Sem os extras de captura e interface: o pipeline de modelagem roda
+        # sobre as bases públicas e não precisa de câmera nem de servidor
+        # gráfico.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Rodar a suíte
+        run: python -m pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Guardar o relatório de cobertura
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura
+          path: coverage.xml
+
+  mutation:
+    # O teste de mutação é lento demais para rodar a cada envio. Roda sob
+    # demanda e no histórico da branch principal, onde o escore serve de
+    # indicador de qualidade da suíte (seção 4.5 da metodologia).
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Rodar o teste de mutação
+        run: |
+          mutmut run --max-children 4 || true
+          mutmut results
+
+  panel:
+    # O painel do professor precisa de Qt e de um servidor gráfico. O gráfico
+    # em si é testado sem nenhum dos dois -- `tests/test_panel.py` usa o
+    # backend Agg do matplotlib --, e é por isso que ele roda no job `pytest`
+    # acima. Este job existe só para confirmar que a janela abre: um erro de
+    # montagem de widget não apareceria de outra forma.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar Qt e um servidor gráfico virtual
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libfontconfig1
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,panel]"
+
+      - name: Gerar uma turma de demonstração, com banco
+        run: python scripts/make_demo_class.py --out /tmp/turma --students 12 --db /tmp/demo.db
+
+      - name: Abrir o painel e fechar
+        run: |
+          xvfb-run -a python scripts/smoke_panel.py /tmp/turma
+          xvfb-run -a python scripts/smoke_panel.py --db /tmp/demo.db
+
+      - name: Testar as telas de login e cadastro
+        # Pulado no job pytest, que não instala Qt.
+        run: xvfb-run -a python -m pytest tests/test_panel_accounts.py
+
+  dart:
+    # O núcleo do aplicativo é Dart puro, sem dependência de Flutter, de
+    # propósito: a suíte roda aqui sem SDK do Flutter, sem Android e sem
+    # emulador. O que não roda aqui é a camada de interface, que precisa do
+    # Flutter.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile/eyelearn_core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Instalar dependências
+        run: dart pub get
+
+      - name: Conferir a formatação
+        run: dart format --output=none --set-exit-if-changed lib test tool
+
+      - name: Analisar
+        run: dart analyze --fatal-infos
+
+      - name: Rodar a suíte
+        # Inclui o teste diferencial contra os vetores de ouro do Python, que é
+        # o que garante que as duas implementações do pipeline concordem.
+        run: dart test
+
+  app:
+    # O aplicativo do aluno (Flutter): análise, testes de widget e a
+    # compilação para web, que é como as famílias o usam. A publicação fica em
+    # pages.yml, só a partir da main.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile/eyelearn_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Baixar o MediaPipe para navegador e o modelo (com conferência)
+        working-directory: .
+        run: python scripts/fetch_mediapipe_web.py
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Instalar dependências
+        run: flutter pub get
+
+      - name: Analisar
+        run: flutter analyze
+
+      - name: Testar
+        run: flutter test
+
+      - name: Compilar para web
+        run: flutter build web --release --no-web-resources-cdn --base-href /EyeLearn/
+
+  assets:
+    # Os ativos embarcados (modelo e vetores de ouro) são gerados do lado
+    # Python e commitados. Se alguém mudar o pipeline e esquecer de regerá-los,
+    # a suíte Dart continuaria passando contra um arquivo velho -- e o
+    # aplicativo embarcaria um modelo que espera outra extração.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Conferir que os ativos commitados estão em dia
+        # --check não escreve nada e ignora o instante de exportação, que muda
+        # a cada execução: comparar o arquivo inteiro falharia sempre, e uma
+        # verificação que falha sempre é desligada na primeira semana.
+        run: python scripts/build_mobile_assets.py --check

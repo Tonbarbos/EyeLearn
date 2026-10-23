@@ -1,0 +1,18 @@
+name: eyelearn_core
+description: >-
+  Núcleo de processamento do olhar e inferência do EyeLearn, em Dart puro.
+  Sem dependência de Flutter, para que a suíte rode em qualquer máquina e o
+  mesmo código sirva ao aplicativo e aos testes.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dev_dependencies:
+  test: ^1.25.0
+dependencies:
+  # SHA-256 para o PBKDF2 do PIN do aluno. Pacote mantido pela equipe do
+  # Dart, em Dart puro: não traz código nativo nem acesso à rede.
+  crypto: ^3.0.7
+  pointycastle: ^4.0.0

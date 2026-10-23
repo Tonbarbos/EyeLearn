@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "feature_names": [
+    "fixation_rate",
+    "fixation_duration_mean",
+    "fixation_duration_std",
+    "fixation_duration_median",
+    "saccade_rate",
+    "saccade_amplitude_mean",
+    "saccade_amplitude_std",
+    "progressive_amplitude_mean",
+    "regression_ratio",
+    "regression_rate",
+    "peak_velocity_mean",
+    "line_sweep_rate",
+    "reading_time",
+    "scanpath_length"
+  ],
+  "scaler": {
+    "mean": [
+      1.8403850114009397,
+      0.5736027712876535,
+      0.5355310250409278,
+      0.40757123571433373,
+      1.7545699651776125,
+      2.752502020181836,
+      4.313527864437843,
+      1.8987891281378886,
+      0.16263983560303272,
+      0.28062349101568346,
+      95.11749382747554,
+      0.08965161098395759,
+      111.12392269999998,
+      439.01805271419994
+    ],
+    "scale": [
+      0.5852734476568106,
+      0.23866723064973996,
+      0.32611883453720386,
+      0.1276358149126734,
+      0.570238629702363,
+      0.46473602712307444,
+      0.6844294315415447,
+      0.3284970935656866,
+      0.05349468224605641,
+      0.1551878287661052,
+      17.056461922373295,
+      0.04037824731969622,
+      68.75385821577312,
+      76.38174738730967
+    ]
+  },
+  "model": {
+    "kind": "logistic",
+    "coef": [
+      -0.4154648568950753,
+      0.2843323926592759,
+      0.1972386955370355,
+      0.6086181933101962,
+      -0.7736943777536192,
+      -0.28588359352643317,
+      -0.2553894578359016,
+      -0.14164199582948164,
+      1.2512500394041284,
+      0.09504037443608773,
+      -0.36982291606871776,
+      0.17942614458449682,
+      0.7405854029536,
+      1.1063104855650852
+    ],
+    "intercept": 0.44809088790717194
+  },
+  "score_kind": "probability",
+  "preprocessing": {
+    "method": "ivt",
+    "smoothing_ms": 20.0,
+    "max_gap": 0.075,
+    "velocity_threshold": 30.0,
+    "dispersion_threshold": 1.0,
+    "min_fixation_duration": 0.06,
+    "bounds_deg": null
+  },
+  "metadata": {
+    "exported_at": "2026-10-13T18:24:21+00:00",
+    "positive_class": "dyslexic",
+    "task": "text",
+    "model_name": "logistic",
+    "training_data": "etdd70",
+    "n_recordings": 70,
+    "n_subjects": 70,
+    "cv_accuracy": 0.8514,
+    "cv_sensitivity": 0.8457,
+    "cv_specificity": 0.8571,
+    "cv_roc_auc": 0.9461,
+    "ppv_at_school_prevalence": 0.3968
+  }
+}

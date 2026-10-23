@@ -1,0 +1,44 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Cobertura
+.coverage
+coverage.xml
+htmlcov/
+
+# Teste de mutação: o mutmut gera uma árvore inteira de cópias mutadas.
+mutants/
+.mutmut-cache
+mutmut-stats.json
+
+# Bases de dados não são redistribuídas no repositório. Baixe o ETDD70 do
+# Zenodo e aponte o caminho na configuração.
+#
+# Só na raiz: sem a barra inicial, a regra também escondia o pacote
+# eyelearn/data/, que ficou fora do repositório até ser notado.
+/data/
+*.edf
+
+# Dart e Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+# O modelo do MediaPipe não é redistribuído: baixe-o conforme mobile/README.md.
+mobile/eyelearn_app/android/app/src/main/assets/*.task
+# O MediaPipe para navegador e o modelo, baixados por
+# scripts/fetch_mediapipe_web.py (cerca de 30 MB).
+mobile/eyelearn_app/web/mediapipe/
+# Gerados pelo `flutter create`: o andaime de plataforma é recriado por quem
+# compila, e `local.properties` guarda o caminho do SDK da máquina.
+mobile/eyelearn_app/android/local.properties
+mobile/eyelearn_app/android/.gradle/
+mobile/eyelearn_app/android/app/src/main/java/
+*.iml
+/resultados/
