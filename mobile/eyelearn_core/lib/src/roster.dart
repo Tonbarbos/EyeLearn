@@ -16,11 +16,10 @@
 library;
 
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
-import 'package:pointycastle/export.dart' as pc;
+import 'kdf.dart';
+import 'sealing.dart';
 
 /// Identificador do formato. Tem de coincidir com `ROSTER_FORMAT` em
 /// `eyelearn/storage/store.py`.
@@ -32,10 +31,7 @@ const rosterFormatVersion = 3;
 const pinLength = 4;
 
 /// Parâmetros do pacote cifrado; iguais aos de `eyelearn/storage/package.py`.
-const packageVersion = 1;
-const _saltBytes = 16;
-const _nonceBytes = 12;
-const _tagBytes = 16;
+const packageVersion = sealVersion;
 const packageKdfIterations = 50000;
 const _aad = 'eyelearn-turma';
 
@@ -178,43 +174,17 @@ class Roster {
   /// cortado ou de outra versão. Código errado e link alterado dão o mesmo
   /// erro -- a cifra autenticada não distingue, e não precisa.
   static String openSealed(String sealed, String code) {
-    final Uint8List blob;
     try {
-      blob = _unb64(sealed);
-    } on FormatException {
-      throw const FormatException('o link está incompleto');
-    }
-    if (blob.length < 1 + _saltBytes + _nonceBytes + _tagBytes ||
-        blob[0] != packageVersion) {
-      throw const FormatException(
-        'o link está incompleto ou é de outra versão',
-      );
-    }
-    final salt = blob.sublist(1, 1 + _saltBytes);
-    final nonce = blob.sublist(1 + _saltBytes, 1 + _saltBytes + _nonceBytes);
-    final sealedBody = blob.sublist(1 + _saltBytes + _nonceBytes);
-    final key = pbkdf2Sha256(
-      ascii.encode(normalizeClassCode(code)),
-      salt,
-      packageKdfIterations,
-      32,
-    );
-    final cipher = pc.GCMBlockCipher(pc.AESEngine())
-      ..init(
-        false,
-        pc.AEADParameters(
-          pc.KeyParameter(key),
-          _tagBytes * 8,
-          nonce,
-          Uint8List.fromList(ascii.encode(_aad)),
-        ),
-      );
-    try {
-      return utf8.decode(cipher.process(sealedBody));
-    } on pc.InvalidCipherTextException {
-      throw const FormatException('o código da turma não confere');
-    } on ArgumentError {
-      throw const FormatException('o código da turma não confere');
+      return utf8.decode(openSealedWithSecret(
+        sealed,
+        normalizeClassCode(code),
+        packageKdfIterations,
+        aad: _aad,
+      ));
+    } on FormatException catch (error) {
+      throw FormatException(error.message == 'não confere'
+          ? 'o código da turma não confere'
+          : 'o link está incompleto ou é de outra versão');
     }
   }
 
@@ -270,41 +240,6 @@ bool verifyPin(String pin, String stored) {
     difference |= derived[i] ^ expected[i];
   }
   return difference == 0;
-}
-
-/// PBKDF2-HMAC-SHA256 (RFC 8018, seção 5.2).
-Uint8List pbkdf2Sha256(
-  List<int> password,
-  List<int> salt,
-  int iterations,
-  int keyLength,
-) {
-  final hmac = Hmac(sha256, password);
-  final output = Uint8List(keyLength);
-  const blockSize = 32;
-  final blocks = (keyLength + blockSize - 1) ~/ blockSize;
-
-  for (var block = 1; block <= blocks; block++) {
-    final first = [
-      ...salt,
-      (block >> 24) & 0xff,
-      (block >> 16) & 0xff,
-      (block >> 8) & 0xff,
-      block & 0xff,
-    ];
-    var u = hmac.convert(first).bytes;
-    final t = Uint8List.fromList(u);
-    for (var i = 1; i < iterations; i++) {
-      u = hmac.convert(u).bytes;
-      for (var j = 0; j < blockSize; j++) {
-        t[j] ^= u[j];
-      }
-    }
-    final offset = (block - 1) * blockSize;
-    final length = math.min(blockSize, keyLength - offset);
-    output.setRange(offset, offset + length, t);
-  }
-  return output;
 }
 
 Uint8List? _fromHex(String hex) {
