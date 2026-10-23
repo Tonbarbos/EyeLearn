@@ -1,7 +1,10 @@
 # EyeLearn no celular
 
 Aplicativo do aluno: a criança lê na tela enquanto a câmera frontal acompanha o
-olhar. O painel do professor continua no computador, em PyQt6, como descreve a
+olhar. É **dever de casa** -- celular não entra na escola -- e roda **no
+navegador** do celular (iPhone e Android), publicado em
+https://tonbarbos.github.io/EyeLearn/. O mesmo código compila também como
+aplicativo Android. O painel do professor continua no computador, em PyQt6, como descreve a
 seção 4.2 do relatório — a tela grande e os gráficos fazem sentido ali, não num
 celular.
 
@@ -11,39 +14,66 @@ celular.
 > escolar é de cerca de 22% seria o oposto do que o projeto se compromete a
 > fazer.
 
-## Login do aluno
+## Como a criança entra
 
-O professor cadastra a turma no painel e exporta a **lista da turma**
-(`turma_*.eyelearn.json`). No celular, um adulto importa o arquivo uma vez, em
-**Importar lista da turma**; a lista fica no diretório de documentos do
-aplicativo.
+1. O professor manda no grupo das famílias o **link da turma** e, à parte, o
+   **código da turma** (ver "Atividades e link" no painel).
+2. O responsável abre o link e digita o código, uma vez. O pacote da turma vai
+   cifrado no próprio link, depois do `#`, e é aberto no aparelho
+   (`Roster.openLink`, AES-256-GCM com chave PBKDF2 do código). O site que
+   serve o aplicativo nunca recebe esse pedaço do endereço.
+3. A criança toca no próprio nome e digita o PIN de quatro dígitos num teclado
+   próprio, de teclas grandes.
+4. Aparecem as atividades dela: a fazer (com o prazo), feitas, a começar e
+   encerradas. Ela escolhe uma, calibra e lê.
+5. Ao final, o responsável envia o arquivo da sessão ao professor pelo
+   compartilhar do sistema (no navegador sem compartilhamento, o arquivo é
+   baixado). A sessão leva o código do aluno e o da atividade.
 
-A cada aula o celular lê o **QR da atividade** que o professor projeta
-(`lib/src/ui/scan_screen.dart`, com o `mobile_scanner` e o modelo do ML Kit
-embarcado, sem rede). O QR diz a tarefa e até quando a entrada fica aberta, e
-é conferido no aparelho (`eyelearn_core/lib/src/activity.dart`): assinatura
-com a chave da turma, turma certa e prazo. Só então aparecem os nomes: a
-criança toca no dela e digita o PIN de quatro dígitos num teclado próprio, de
-teclas grandes. A sessão sai com o código do aluno e o da atividade.
+A turma, o código e o que cada aluno já fez ficam guardados no aparelho
+(`lib/src/session/class_storage.dart`). Quando o professor cria atividade, o
+link novo abre sem pedir o código de novo.
 
-- A lista leva só "Ana S.", o código e o hash do PIN. O nome completo fica no
-  computador do professor, e a sessão sai do aparelho com o código.
+- O link leva só "Ana S.", o código e o hash do PIN de cada aluno, e as
+  atividades. Nome completo e data de nascimento ficam no computador do
+  professor.
 - O PIN é conferido no aparelho, offline, por PBKDF2-SHA256
-  (`eyelearn_core/lib/src/roster.dart`). O mesmo hash é gravado pelo Python, e
-  `test/roster_test.dart` confere os dois lados contra uma lista gerada por
-  `scripts/make_roster_fixture.py`, além dos vetores publicados do PBKDF2.
+  (`eyelearn_core/lib/src/roster.dart`). O pacote é fechado pelo Python e
+  aberto pelo Dart; `test/roster_test.dart` abre um pacote gerado por
+  `scripts/make_roster_fixture.py`, e confere os vetores publicados do PBKDF2.
 - Cinco PINs errados bloqueiam aquele aluno por um minuto, dobrando a cada
   novo bloqueio. A mensagem pede para esperar e chamar o professor, sem
   vermelho: errar o PIN não é falha da criança.
-- O seletor de arquivos é o do sistema (`file_picker`), sem permissão de
-  armazenamento nem de internet.
+- O Safari pode apagar o armazenamento de um site que fica semanas sem uso;
+  aí basta abrir o link e digitar o código outra vez.
+
+## O olhar no navegador
+
+`web/gaze.js` abre a câmera frontal (`getUserMedia`) e roda o **MediaPipe Face
+Landmarker para web** no próprio aparelho, em WebAssembly. Entrega ao Dart, por
+quadro, os mesmos 478 pontos (com as íris) que o canal nativo do Android
+entrega; o resto do aplicativo não sabe qual está em uso
+(`lib/src/gaze/platform_gaze*.dart`). Nenhum quadro de imagem sai do arquivo.
+
+O MediaPipe 1.1.1 e o modelo são servidos pelo próprio site, não por CDN:
+`scripts/fetch_mediapipe_web.py` os baixa com conferência de SHA-256 para
+`web/mediapipe/` (cerca de 30 MB, fora do git). No primeiro acesso o navegador
+baixa uns 35 MB ao todo, que ficam em cache.
+
+Ajustes para o navegador, onde o MediaPipe pode rodar a 15 Hz num celular
+modesto, em vez dos 30 Hz do Android:
+
+- a calibração estende a janela de medida de cada alvo até 1,2 s quando
+  chegam poucos quadros, em vez de reprovar o alvo;
+- o piso de qualidade da taxa de amostragem é 15 Hz, não 20: a curva de
+  degradação sobre o ETDD70 mostra 82% no texto a 15 Hz com 1° de erro.
 
 ## Os dois pacotes
 
 | Pacote | O que é | Roda sem Flutter? |
 |---|---|---|
 | `eyelearn_core` | processamento do olhar, calibração, inferência | **sim** — Dart puro, `dart test` |
-| `eyelearn_app` | interface, câmera, canal nativo | não — precisa do SDK do Flutter |
+| `eyelearn_app` | interface, câmera (nativa e web), fluxo de dever de casa | não — precisa do SDK do Flutter |
 
 A separação é deliberada. Tudo que é cálculo está em `eyelearn_core`, sem
 nenhuma dependência de Flutter, e por isso tem suíte que roda em qualquer
@@ -60,7 +90,7 @@ escreve essa função explicitamente em JSON, e `model.dart` a reimplementa.
 
 O aplicativo embarca **um modelo por tarefa** (`assets/model_syllables.json`,
 `model_text.json`, `model_pseudotext.json`), regressões logísticas treinadas no
-ETDD70 real, e usa o da tarefa que veio no QR do professor. Um modelo único
+ETDD70 real, e usa o da tarefa da atividade. Um modelo único
 para as três tarefas acerta 77%; um por tarefa, de 80% a 86% (ver
 `relatorio/BASES-DE-DADOS.md`). Os modelos derivam do ETDD70, sob CC BY 4.0.
 
@@ -162,14 +192,16 @@ isso seria medido como erro.
 ## Pré-visualização no navegador
 
 `lib/main_demo.dart` roda as telas reais com o pipeline real, trocando apenas a
-câmera por uma fonte sintética que emite pontos de rosto a 30 Hz. Serve para
-ver a interface sem Android, sem câmera e sem o modelo do MediaPipe.
+câmera por uma fonte sintética que emite pontos de rosto a 30 Hz, com a turma
+fictícia de `assets/demo_class.json` (código e PINs aparecem na tela). Serve
+para ver a interface sem câmera.
 
 ```bash
 cd mobile/eyelearn_app
-flutter create --platforms=web .      # só na primeira vez
 flutter pub get
-flutter run -d chrome -t lib/main_demo.dart
+flutter run -d chrome -t lib/main_demo.dart       # pré-visualização
+python ../../scripts/fetch_mediapipe_web.py       # uma vez, para o app real
+flutter run -d chrome                             # o app real, com câmera
 ```
 
 Foi assim que apareceram dois defeitos que nenhum teste pegava: a calibração
@@ -183,17 +215,30 @@ retornos de linha que o modelo receberia. Ambos corrigidos, com testes.
 # Núcleo: roda em qualquer máquina
 cd mobile/eyelearn_core
 dart pub get
-dart test                       # 183 testes: diferencial, PIN e QR
+dart test                       # 178 testes: diferencial, PIN e link da turma
 dart analyze
 
 # Regerar os ativos embarcados (do lado Python)
 cd ../..
 python scripts/build_mobile_assets.py
 python scripts/build_mobile_assets.py --check   # o que a CI roda
-python scripts/make_roster_fixture.py           # lista de exemplo do PIN
+python scripts/make_roster_fixture.py           # pacote de turma de exemplo
 ```
 
-### Aplicativo
+### Aplicativo web (o que as famílias usam)
+
+```bash
+python scripts/fetch_mediapipe_web.py
+cd mobile/eyelearn_app
+flutter build web --release --no-web-resources-cdn --base-href /EyeLearn/
+```
+
+A publicação no GitHub Pages é automática a cada envio à `main`
+(`.github/workflows/pages.yml`), depois de ligar uma vez **Settings → Pages →
+Source: GitHub Actions** no repositório. A câmera só funciona em https (ou em
+`localhost`).
+
+### Aplicativo Android (opcional)
 
 ```bash
 cd mobile/eyelearn_app
@@ -214,18 +259,22 @@ Antes do primeiro `flutter run`:
 3. **iOS não está implementado.** O `GazePlugin` tem só a versão Android; a
    equivalente em Swift com MediaPipe Tasks Vision para iOS está pendente.
 
-## O que esta sessão não conseguiu verificar
+## O que foi e o que não foi verificado
 
-O aplicativo **compila** (`flutter build web`) e `flutter analyze` passa sem
-observações; `flutter test` roda 27 testes de widget, entre eles os da tela do
-PIN e do cartão da atividade. A pré-visualização no
-navegador foi executada e gravada de ponta a ponta.
+Verificado: `flutter analyze` sem observações; `flutter test` roda 34 testes
+de widget, incluindo a entrada na turma pelo link, o PIN e a lista de
+atividades. O **build web real** foi aberto num Chromium com câmera falsa
+(uma foto de rosto) e percorreu link, código, nome, PIN e atividade até a
+calibração, com a câmera aberta e os quadros do MediaPipe (478 pontos, com
+íris) chegando ao Dart.
 
-O que continua sem verificação é o caminho Android: `GazePlugin.kt`, o
-`AndroidManifest.xml` e o `build.gradle.kts` **nunca foram compilados**, porque
-o ambiente não tem o SDK do Android. Espere ajustes nas versões do MediaPipe
-Tasks Vision e do CameraX, e na conversão de quadro (`image.toBitmap()` exige
-CameraX recente). O iOS não está implementado. O `file_picker` também só foi
-exercitado no navegador, e o leitor de QR (`mobile_scanner`) **nunca rodou**:
-no navegador a leitura é simulada, gerando o QR com a chave da turma e
-passando pela mesma conferência.
+**Não verificado: um celular de verdade.** Falta medir no Safari do iPhone e
+no Chrome do Android a taxa de quadros do MediaPipe, a precisão da calibração e
+o compartilhamento do arquivo. No ambiente de desenvolvimento, sem GPU, o
+MediaPipe rodou a uns 3 quadros por segundo, o que não diz nada sobre um
+celular. É o primeiro teste a fazer com o grupo.
+
+O caminho Android nativo (`GazePlugin.kt`, `AndroidManifest.xml`,
+`build.gradle.kts`) **nunca foi compilado**, porque o ambiente não tem o SDK
+do Android. O navegador cobre o Android também, então o aplicativo nativo é
+opcional.

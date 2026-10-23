@@ -8,10 +8,12 @@ Projeto acadêmico do curso de Ciência da Computação do Centro Universitário
 
 ## O que faz
 
-1. A criança realiza uma atividade de leitura no celular enquanto a câmera frontal acompanha o olhar.
-2. O sistema extrai características do percurso do olhar: fixações, sacadas e regressões.
-3. Um modelo treinado em bases públicas classifica o padrão observado.
-4. O professor vê o resultado em um painel no computador, comparado com a média da turma.
+A atividade é **dever de casa** (celular não entra na escola):
+
+1. O professor cria as atividades no painel e manda às famílias um link e um código de turma.
+2. Em casa, a criança abre o link no celular (iPhone ou Android, pelo navegador), escolhe o nome, digita o PIN e lê enquanto a câmera frontal acompanha o olhar.
+3. O aparelho extrai as características do percurso do olhar (fixações, sacadas, regressões) e o responsável envia o arquivo da sessão ao professor.
+4. O professor importa as sessões e vê, no painel, cada criança comparada com a turma.
 
 A criança não vê resultado nenhum: o aplicativo diz que ela terminou, e é tudo.
 
@@ -45,13 +47,19 @@ python scripts/run_etdd70.py --etdd70 PASTA_DO_DATA_ZIP --labels dyslexia_class_
 
 | Parte | Plataforma | Tecnologia |
 |---|---|---|
-| Atividade do aluno | celular | Flutter + MediaPipe, inferência no aparelho |
+| Atividade do aluno | navegador do celular (iPhone e Android); app Android opcional | Flutter + MediaPipe, tudo no aparelho |
 | Painel do professor | computador | PyQt6 + Matplotlib |
 | Treino e experimentos | computador | Python, scikit-learn |
 
-A sessão vai do celular ao painel como um arquivo JSON, pela folha de
-compartilhamento do sistema. **Não há servidor**: nada trafega pela rede a
-partir do aplicativo, e o aplicativo não declara permissão de internet.
+O aplicativo do aluno fica publicado em **https://tonbarbos.github.io/EyeLearn/**
+(GitHub Pages, por `.github/workflows/pages.yml`, a cada envio à `main`). É só
+um site estático: **não há servidor com dado de turma**. A turma chega no
+link, e a sessão vai do celular ao painel como um arquivo JSON, pelo
+compartilhar do sistema.
+
+No primeiro acesso o navegador baixa cerca de 35 MB (o aplicativo, o MediaPipe
+e o modelo do rosto), que ficam em cache. Vale avisar as famílias para abrir
+o link no Wi-Fi.
 
 ## Estrutura
 
@@ -93,17 +101,17 @@ A base não vem no repositório. Baixe o ETDD70 do Zenodo, extraia e aponte o
 caminho:
 
 ```python
-from eyelearn.data.etdd70 import load_dataset
+from eyelearn.data.etdd70 import load_etdd70
 from eyelearn.experiments.degradation_curve import run_degradation_curve
 
-dataset = load_dataset("caminho/para/etdd70", labels="caminho/para/labels.csv")
+dataset = load_etdd70("caminho/para/data", labels="caminho/para/dyslexia_class_label.csv")
 curva = run_degradation_curve(dataset.filter_by_quality().traces)
 print(curva)
 ```
 
-Confira a geometria do aparato em `ScreenGeometry` antes de rodar: os valores
-padrão descrevem um monitor de 24 polegadas a 60 cm, e um erro ali escala
-todas as características espaciais por um fator constante.
+A geometria do aparato do ETDD70 está em `ETDD70_GEOMETRY`; a largura física
+da tela não é publicada pelos autores e é uma suposição documentada no
+próprio módulo.
 
 ## Testes
 
@@ -153,23 +161,26 @@ pip install -e ".[panel]"
 python -m eyelearn.panel
 ```
 
-Na primeira vez, o painel pede para criar a conta de professor. Depois, em
-**Alunos e turmas**, o professor cria a turma, cadastra os alunos (cada um
-recebe um código e um PIN de 4 dígitos, mostrado uma vez) e exporta a **lista
-da turma** para o celular -- uma vez por turma.
+Na primeira vez, o painel pede para criar a conta de professor. Depois:
 
-A cada aula, **Abrir atividade** escolhe a tarefa e mostra um QR para projetar,
-válido por 15 minutos. O celular só abre a atividade depois de ler esse QR:
-quem consegue ler a tela do professor está na sala. Não há rede, localização
-nem Bluetooth envolvidos. Depois do QR, a criança toca no próprio nome e
-digita o PIN. As sessões voltam como arquivos e entram no banco por
-**Importar sessões**, que recusa sessão de atividade de outra turma.
+1. Em **Alunos e turmas**, o professor cria a turma e cadastra os alunos. Cada
+   um recebe um código e um PIN de 4 dígitos, mostrado uma vez.
+2. Em **Atividades e link**, cria o dever de casa (tarefa, dia de início e
+   prazo) e copia a mensagem com o link para o grupo das famílias. O código
+   da turma vai à parte (bilhete na agenda ou outra mensagem).
+3. Em casa, o responsável abre o link e digita o código uma vez; a criança
+   escolhe o nome, digita o PIN e vê as atividades pendentes.
+4. As sessões voltam como arquivos (WhatsApp, e-mail) e entram no banco por
+   **Importar sessões**. O painel mostra quantos alunos já entregaram cada
+   atividade.
 
-O QR é assinado com uma chave da turma, que vai para o celular dentro da
-lista: sem ela não se fabrica QR nem se estende o prazo de um antigo. O que a
-assinatura não impede é uma foto do QR mandada para fora da sala, que funciona
-até a entrada fechar -- por isso o prazo é curto, e fechar a janela do QR
-encerra a entrada (quem já entrou continua).
+**O link leva a turma cifrada**, depois do `#` -- parte do endereço que o
+navegador não envia ao servidor. O site que serve o aplicativo (GitHub Pages)
+nunca vê nome de aluno. A cifra é AES-256-GCM com chave derivada do código da
+turma: um link encaminhado para fora do grupo, sem o código, não abre. O link
+muda quando o professor cria atividade ou mexe nos alunos e precisa ser
+mandado de novo; o código continua o mesmo, e o aplicativo o lembra. Ver
+`eyelearn/storage/package.py`.
 
 O banco é um arquivo SQLite na pasta de dados do usuário
 (`%APPDATA%\EyeLearn\eyelearn.db` no Windows, `~/.local/share/eyelearn/` no
@@ -193,7 +204,7 @@ EyeLearn-Apollo, que usava MySQL com as tabelas `Alunos`, `Sessoes` e
 | Antes (MySQL) | Agora (SQLite) | Motivo |
 |---|---|---|
 | servidor MySQL, senha no código | um arquivo, sem servidor | nada trafega pela rede; nada a configurar na escola |
-| sem login: o aluno escolhia o nome numa lista, o professor entrava direto | professor com usuário e senha; aluno com QR da aula, nome e PIN | um professor não vê os alunos de outro; uma criança não grava sessão no nome da colega nem fora da sala |
+| sem login: o aluno escolhia o nome numa lista, o professor entrava direto | professor com usuário e senha; aluno com link e código da turma, nome e PIN | um professor não vê os alunos de outro; uma criança não grava sessão no nome da colega |
 | tabela `Diagnosticos` ("Possível TDAH", "Possível Dislexia") | não existe | o sistema não diagnostica, e o banco não tem onde gravar rótulo |
 | `genero` | não existe | nenhuma parte do pipeline usa (LGPD, art. 6º, III) |
 | escola, série e turma repetidas em cada aluno | tabela `turmas` | "5A" e "5º A" viravam duas turmas |
@@ -230,10 +241,11 @@ O que o painel mostra, e o que ele recusa mostrar:
 - **Python 3.11**, **NumPy**, **Pandas**, **Scikit-learn**
 - **Pytest**, **Hypothesis**, **Mutmut** — testes
 
-**Aplicativo do aluno (celular)**
+**Aplicativo do aluno (navegador do celular)**
 
-- **Flutter** e **Dart** — interface e núcleo de processamento
-- **MediaPipe Face Landmarker** — pontos do rosto e centro da íris, no aparelho
+- **Flutter** e **Dart** — interface e núcleo de processamento, compilados para web
+- **MediaPipe Face Landmarker** (Apache 2.0) — pontos do rosto e centro da íris, no aparelho, em WebAssembly
+- **AES-256-GCM** (pointycastle no Dart, cryptography no Python) — a turma cifrada no link
 - Inferência local a partir de um artefato JSON exportado do scikit-learn, sem
   TensorFlow Lite e sem dependência nativa de aprendizado de máquina
 
@@ -243,11 +255,11 @@ O que o painel mostra, e o que ele recusa mostrar:
 
 ## Privacidade
 
-Os quadros da câmera são processados na memória do próprio aparelho e descartados logo após a extração das coordenadas do olhar. Nenhuma imagem de rosto é gravada ou enviada pela rede — o aplicativo não declara permissão de internet, e a sessão sai dele como arquivo, por ação de um adulto.
+Os quadros da câmera são processados na memória do próprio aparelho e descartados logo após a extração das coordenadas do olhar. Nenhuma imagem de rosto é gravada ou enviada pela rede. No navegador, o MediaPipe roda no aparelho (WebAssembly) e é servido pelo próprio site, sem CDN de terceiros; o site entrega só o aplicativo e não recebe nada de volta. A sessão sai do aparelho como arquivo, por ação de um adulto.
 
 A sessão não carrega nome de criança, apenas um código pseudônimo. Também não carrega o percurso bruto do olhar: só as características agregadas, que é o que o painel precisa.
 
-O nome completo e a data de nascimento ficam só no banco do professor, no computador dele. A lista da turma que vai para o celular leva o primeiro nome com a inicial do sobrenome ("Ana S."), o código e o PIN em forma de hash -- é o mínimo para a criança se reconhecer na tela. Apagar um aluno no painel apaga junto todas as sessões dele (LGPD, art. 18, VI).
+O nome completo e a data de nascimento ficam só no banco do professor, no computador dele. O link da turma leva, cifrados, o primeiro nome com a inicial do sobrenome ("Ana S."), o código e o PIN em forma de hash -- é o mínimo para a criança se reconhecer na tela. Quem tem o link e o código (as famílias do grupo) consegue ver esses nomes de exibição, como já vê no grupo da turma. Apagar um aluno no painel apaga junto todas as sessões dele (LGPD, art. 18, VI).
 
 Imagem facial é dado biométrico e, portanto, dado pessoal sensível segundo a [Lei Geral de Proteção de Dados](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm).
 

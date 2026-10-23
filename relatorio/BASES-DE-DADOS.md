@@ -52,7 +52,7 @@ nenhuma das 210 foi descartada pelo filtro de 75%.
 
 Juntar as três tarefas num modelo só **piora** o resultado: o padrão de leitura
 de sílabas soltas e o de uma história são diferentes demais, e o modelo não
-sabe qual está vendo. O aplicativo sabe -- a tarefa vem do QR do professor --,
+sabe qual está vendo. O aplicativo sabe -- a tarefa vem da atividade que o professor criou --,
 então embarca um modelo por tarefa.
 
 A **regressão logística** é a melhor ou empata em duas das três tarefas. Com

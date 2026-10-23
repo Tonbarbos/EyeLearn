@@ -543,32 +543,18 @@ class _StudentActivitiesScreenState extends State<StudentActivitiesScreen> {
     }
     if (!mounted) return;
 
-    final gaze = env.gaze();
-    final passage = passageById(activity.task);
+    // Uma rota só para calibração, leitura e fim: o `await` volta quando a
+    // atividade termina de fato (ou é abandonada), e não na troca de tela.
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => CalibrationScreen(
-          channel: gaze,
-          onTargetShown: env.onTargetShown == null
-              ? null
-              : (target) => env.onTargetShown!(gaze, target),
-          onCalibrated: (calibration) => Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(
-              builder: (context) => _ReadingRun(
-                environment: env,
-                gaze: gaze,
-                calibration: calibration,
-                passage: passage,
-                model: model,
-                student: widget.student,
-                activity: activity,
-              ),
-            ),
-          ),
+        builder: (context) => ActivityRunScreen(
+          environment: env,
+          model: model,
+          student: widget.student,
+          activity: activity,
         ),
       ),
     );
-    await gaze.stop();
     await _reload();
   }
 
@@ -754,67 +740,103 @@ class HomeworkCard extends StatelessWidget {
   }
 }
 
-/// Liga a leitura à exportação.
-class _ReadingRun extends StatelessWidget {
+enum _RunStage { calibrating, reading, finished }
+
+/// Uma atividade, da calibração ao fim, numa rota só.
+///
+/// Quem fecha a rota -- terminando ou voltando no meio -- desliga a câmera, em
+/// [dispose]: deixar a câmera ligada depois de sair da atividade seria uma
+/// captura que ninguém pediu.
+class ActivityRunScreen extends StatefulWidget {
   final HomeworkEnvironment environment;
-  final GazeSource gaze;
-  final GazeCalibration calibration;
-  final Passage passage;
   final ModelArtifact model;
   final RosterStudent student;
   final HomeworkActivity activity;
 
-  const _ReadingRun({
+  const ActivityRunScreen({
+    super.key,
     required this.environment,
-    required this.gaze,
-    required this.calibration,
-    required this.passage,
     required this.model,
     required this.student,
     required this.activity,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final startedAt = environment.clock();
+  State<ActivityRunScreen> createState() => _ActivityRunScreenState();
+}
 
-    return ReadingScreen(
-      channel: gaze,
-      calibration: calibration,
-      passage: passage,
-      onStarted: environment.onReadingStarted == null
-          ? null
-          : () => environment.onReadingStarted!(gaze),
-      onFinished: (trace, quality) async {
-        final analysis = analyse(trace, model.preprocessing);
-        final exported = exportSession(
-          participantCode: student.code,
-          activityCode: activity.code,
-          task: passage.id,
-          startedAt: startedAt,
-          trace: trace,
-          quality: quality,
-          features: analysis.features,
-          artifact: model,
-        );
-        // Conta como feita só se a captura serviu: uma gravação ruim fica
-        // pendente, e a tela final sugere repetir.
-        if (exported.session.hasUsableQuality()) {
-          await environment.storage.markDone(student.code, activity.code);
-        }
-        if (!context.mounted) return;
-        final share = environment.share;
-        await Navigator.of(context).pushReplacement(
-          MaterialPageRoute<void>(
-            builder: (context) => FinishedScreen(
-              session: exported.session,
-              onShare: share == null ? null : () => share(exported),
-              doneLabel: 'Voltar às atividades',
-              onDone: () => Navigator.of(context).pop(),
-            ),
-          ),
-        );
-      },
-    );
+class _ActivityRunScreenState extends State<ActivityRunScreen> {
+  late final GazeSource _gaze = widget.environment.gaze();
+  late final Passage _passage = passageById(widget.activity.task);
+
+  _RunStage _stage = _RunStage.calibrating;
+  GazeCalibration? _calibration;
+  ExportedSession? _exported;
+  late DateTime _startedAt;
+
+  HomeworkEnvironment get env => widget.environment;
+
+  @override
+  void dispose() {
+    _gaze.stop();
+    super.dispose();
   }
+
+  void _calibrated(GazeCalibration calibration) {
+    setState(() {
+      _calibration = calibration;
+      _startedAt = env.clock();
+      _stage = _RunStage.reading;
+    });
+  }
+
+  Future<void> _finished(GazeTrace trace, RecordingQuality quality) async {
+    final analysis = analyse(trace, widget.model.preprocessing);
+    final exported = exportSession(
+      participantCode: widget.student.code,
+      activityCode: widget.activity.code,
+      task: _passage.id,
+      startedAt: _startedAt,
+      trace: trace,
+      quality: quality,
+      features: analysis.features,
+      artifact: widget.model,
+    );
+    // Conta como feita só se a captura serviu: uma gravação ruim fica
+    // pendente, e a tela final sugere repetir.
+    if (exported.session.hasUsableQuality()) {
+      await env.storage.markDone(widget.student.code, widget.activity.code);
+    }
+    if (!mounted) return;
+    setState(() {
+      _exported = exported;
+      _stage = _RunStage.finished;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => switch (_stage) {
+        _RunStage.calibrating => CalibrationScreen(
+            channel: _gaze,
+            onTargetShown: env.onTargetShown == null
+                ? null
+                : (target) => env.onTargetShown!(_gaze, target),
+            onCalibrated: _calibrated,
+          ),
+        _RunStage.reading => ReadingScreen(
+            channel: _gaze,
+            calibration: _calibration!,
+            passage: _passage,
+            onStarted: env.onReadingStarted == null
+                ? null
+                : () => env.onReadingStarted!(_gaze),
+            onFinished: _finished,
+          ),
+        _RunStage.finished => FinishedScreen(
+            session: _exported!.session,
+            onShare: env.share == null ? null : () => env.share!(_exported!),
+            doneLabel: 'Voltar às atividades',
+            onDone: () => Navigator.of(context).pop(),
+          ),
+      };
 }

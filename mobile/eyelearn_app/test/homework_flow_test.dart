@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:eyelearn_app/src/gaze/gaze_source.dart';
 import 'package:eyelearn_app/src/gaze/synthetic_gaze_source.dart';
 import 'package:eyelearn_app/src/homework_app.dart';
 import 'package:eyelearn_app/src/session/class_storage.dart';
@@ -17,13 +18,26 @@ final pins = (_demo['pins_for_tests'] as Map).cast<String, String>();
 final today = DateTime.parse(_demo['today'] as String);
 final roster = Roster.fromJson(_demo['expected'] as Map<String, dynamic>);
 
+/// Origem de olhar que só registra se foi desligada.
+class _RecordingGaze extends SyntheticGazeSource {
+  var stopped = 0;
+
+  @override
+  Future<void> stop() async {
+    stopped++;
+    await super.stop();
+  }
+}
+
 HomeworkEnvironment _environment(
   ClassStorage storage, {
   String? link,
+  Map<String, ModelArtifact> models = const {},
+  GazeSource Function()? gaze,
 }) =>
     HomeworkEnvironment(
-      models: const {},
-      gaze: SyntheticGazeSource.new,
+      models: models,
+      gaze: gaze ?? SyntheticGazeSource.new,
       storage: storage,
       clock: () => today.add(const Duration(hours: 15)),
       initialLink: link,
@@ -114,12 +128,16 @@ void main() {
   });
 
   group('atividades do aluno', () {
-    Future<void> login(WidgetTester tester, MemoryClassStorage storage) async {
+    Future<void> login(
+      WidgetTester tester,
+      MemoryClassStorage storage, {
+      HomeworkEnvironment? env,
+    }) async {
       await storage.save(
         packageJson: Roster.openSealed(fragment, code),
         code: code,
       );
-      await _pumpApp(tester, _environment(storage));
+      await _pumpApp(tester, env ?? _environment(storage));
       final ana = roster.students.firstWhere((s) => s.displayName == 'Ana S.');
       await tester.tap(find.text('Ana S.'));
       await _settle(tester);
@@ -162,6 +180,40 @@ void main() {
       await storage.markDone(bruno.code, roster.activities[1].code);
       await login(tester, storage);
       expect(find.text('Feita'), findsNothing);
+    });
+
+    testWidgets(
+        'ao sair da atividade, a lista se atualiza e a câmera é desligada',
+        (tester) async {
+      // Regressão: com pushReplacement entre calibração e leitura, a lista
+      // recarregava no começo da leitura, e a atividade terminada continuava
+      // como pendente.
+      final storage = MemoryClassStorage();
+      final gaze = _RecordingGaze();
+      final model = ModelArtifact.fromJsonString(
+        File('../eyelearn_core/assets/model_text.json').readAsStringSync(),
+      );
+      await login(
+        tester,
+        storage,
+        env: _environment(
+          storage,
+          models: {'text': model, 'pseudotext': model, 'syllables': model},
+          gaze: () => gaze,
+        ),
+      );
+      await tester.tap(find.text('Fazer agora').first);
+      await _settle(tester);
+      expect(find.byType(ActivityRunScreen), findsOneWidget);
+
+      // A atividade termina: a gravação a marca como feita e a tela fecha.
+      final ana = roster.students.firstWhere((s) => s.displayName == 'Ana S.');
+      await storage.markDone(ana.code, roster.activities[1].code);
+      Navigator.of(tester.element(find.byType(ActivityRunScreen))).pop();
+      await _settle(tester);
+
+      expect(find.text('Feita'), findsOneWidget);
+      expect(gaze.stopped, greaterThanOrEqualTo(1));
     });
   });
 }
