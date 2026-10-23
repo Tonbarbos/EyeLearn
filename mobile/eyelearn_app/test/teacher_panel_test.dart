@@ -208,6 +208,28 @@ void main() {
     // A gravação a 10 Hz ficou fora.
     expect(find.textContaining('1 gravação desta tarefa'), findsOneWidget);
     expect(find.textContaining('não é diagnóstico'), findsOneWidget);
+
+    // Descreve sem julgar, e não mostra a pontuação do modelo: é o que
+    // separa o painel de um instrumento diagnóstico (como em
+    // tests/test_panel.py, do lado Python).
+    final shown = [
+      for (final widget in tester.widgetList<Text>(find.byType(Text)))
+        (widget.data ?? widget.textSpan?.toPlainText() ?? '').toLowerCase(),
+    ].join('\n');
+    for (final word in [
+      'ruim',
+      'pior',
+      'risco',
+      'alerta',
+      'grave',
+      'déficit',
+      'pontuação',
+      'probabilidade',
+      'possível dislexia',
+      'tem dislexia',
+    ]) {
+      expect(shown, isNot(contains(word)), reason: word);
+    }
   });
 
   testWidgets('a cópia de segurança é o cofre cifrado', (tester) async {

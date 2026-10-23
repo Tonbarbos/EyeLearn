@@ -4,9 +4,10 @@ Aplicativo do aluno: a criança lê na tela enquanto a câmera frontal acompanha
 olhar. É **dever de casa** -- celular não entra na escola -- e roda **no
 navegador** do celular (iPhone e Android), publicado em
 https://tonbarbos.github.io/EyeLearn/. O mesmo código compila também como
-aplicativo Android. O painel do professor continua no computador, em PyQt6, como descreve a
-seção 4.2 do relatório — a tela grande e os gráficos fazem sentido ali, não num
-celular.
+aplicativo Android. O **painel do professor** está no mesmo site, em
+https://tonbarbos.github.io/EyeLearn/#professor, pensado para a tela do
+computador (`lib/src/teacher/`; ver o README principal). A versão anterior do
+painel, em PyQt6, continua em `eyelearn/panel`.
 
 > **A criança nunca vê resultado.** A tela final diz que ela terminou, e é tudo.
 > A saída pedagógica vai para o professor. Mostrar a uma criança de nove anos

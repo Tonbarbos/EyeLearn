@@ -48,7 +48,7 @@ python scripts/run_etdd70.py --etdd70 PASTA_DO_DATA_ZIP --labels dyslexia_class_
 | Parte | Plataforma | Tecnologia |
 |---|---|---|
 | Atividade do aluno | navegador do celular (iPhone e Android); app Android opcional | Flutter + MediaPipe, tudo no aparelho |
-| Painel do professor | computador | PyQt6 + Matplotlib |
+| Painel do professor | navegador do computador, no mesmo site | Flutter web; dados cifrados no próprio navegador |
 | Treino e experimentos | computador | Python, scikit-learn |
 
 O aplicativo do aluno fica publicado em **https://tonbarbos.github.io/EyeLearn/**
@@ -56,6 +56,10 @@ O aplicativo do aluno fica publicado em **https://tonbarbos.github.io/EyeLearn/*
 um site estático: **não há servidor com dado de turma**. A turma chega no
 link, e a sessão vai do celular ao painel como um arquivo JSON, pelo
 compartilhar do sistema.
+
+O painel do professor está no mesmo endereço, em
+**https://tonbarbos.github.io/EyeLearn/#professor** (ou pelo botão "Sou
+professor" na tela de entrada).
 
 No primeiro acesso o navegador baixa cerca de 35 MB (o aplicativo, o MediaPipe
 e o modelo do rosto), que ficam em cache. Vale avisar as famílias para abrir
@@ -78,13 +82,13 @@ eyelearn/
   export/                      modelo portátil e vetores de ouro para o celular
   session.py                   importa as sessões do celular, compara a turma
   storage/                     banco SQLite do painel: professores, turmas, alunos, sessões
-  panel/                       painel do professor (PyQt6 + Matplotlib)
+  panel/                       versão anterior do painel, para computador (PyQt6)
   synthetic.py                 percursos sintéticos com estrutura conhecida
 tests/                         suíte de testes
 scripts/                       geração dos ativos embarcados
 mobile/
   eyelearn_core/               núcleo em Dart puro, testável sem Flutter
-  eyelearn_app/                aplicativo Flutter do aluno
+  eyelearn_app/                aplicativo Flutter: atividade do aluno e painel do professor
 relatorio/                     relatório do Projeto Integrador IV
 ```
 
@@ -156,38 +160,69 @@ python scripts/build_mobile_assets.py --check      # ativos em dia
 
 ## Painel do professor
 
-```bash
-pip install -e ".[panel]"
-python -m eyelearn.panel
-```
+Abra **https://tonbarbos.github.io/EyeLearn/#professor** no computador. Na
+primeira vez, o painel pede seu nome, um usuário e uma senha. Depois:
 
-Na primeira vez, o painel pede para criar a conta de professor. Depois:
-
-1. Em **Alunos e turmas**, o professor cria a turma e cadastra os alunos. Cada
-   um recebe um código e um PIN de 4 dígitos, mostrado uma vez.
-2. Em **Atividades e link**, cria o dever de casa (tarefa, dia de início e
-   prazo) e copia a mensagem com o link para o grupo das famílias. O código
+1. **Nova turma**, e em **Alunos** cadastre as crianças (um nome por linha).
+   Cada uma recebe um código e um PIN de 4 dígitos, mostrado uma vez; o painel
+   deixa copiar a lista para imprimir os bilhetes.
+2. Em **Atividades e link**, crie o dever de casa (leitura, dia de início e
+   prazo) e copie a mensagem com o link para o grupo das famílias. O código
    da turma vai à parte (bilhete na agenda ou outra mensagem).
 3. Em casa, o responsável abre o link e digita o código uma vez; a criança
    escolhe o nome, digita o PIN e vê as atividades pendentes.
-4. As sessões voltam como arquivos (WhatsApp, e-mail) e entram no banco por
-   **Importar sessões**. O painel mostra quantos alunos já entregaram cada
-   atividade.
+4. As sessões voltam como arquivos (WhatsApp, e-mail). Salve-os no
+   computador e importe todos de uma vez em **Sessões**. A lista de
+   atividades mostra quantos alunos já entregaram cada uma.
+5. Em **Leitura da turma**, cada criança aparece comparada com a turma, por
+   característica, com as sugestões de adaptação.
+
+**Onde ficam os dados.** Não há servidor nem conta online. Tudo do professor
+fica num *cofre*: um arquivo cifrado com a senha dele (AES-256-GCM, chave
+PBKDF2-SHA256 com 200 mil iterações, calculada pelo WebCrypto do navegador),
+guardado no armazenamento do site, no próprio navegador
+(`lib/src/teacher/`, `mobile/eyelearn_core/lib/src/teacher_vault.dart`).
+Duas consequências que o painel explica antes de criar o cofre:
+
+- **Não há como recuperar a senha.** Ninguém além do professor a conhece.
+- **O navegador pode apagar os dados do site** (limpeza de histórico, outro
+  computador). Por isso o painel pede a **cópia de segurança**: o mesmo cofre
+  cifrado, num arquivo, para guardar fora do computador. Ela abre em
+  qualquer navegador, com a mesma senha, por "Restaurar uma cópia de
+  segurança". O painel lembra quando a cópia está velha.
 
 **O link leva a turma cifrada**, depois do `#` -- parte do endereço que o
 navegador não envia ao servidor. O site que serve o aplicativo (GitHub Pages)
 nunca vê nome de aluno. A cifra é AES-256-GCM com chave derivada do código da
 turma: um link encaminhado para fora do grupo, sem o código, não abre. O link
 muda quando o professor cria atividade ou mexe nos alunos e precisa ser
-mandado de novo; o código continua o mesmo, e o aplicativo o lembra. Ver
-`eyelearn/storage/package.py`.
+mandado de novo; o código continua o mesmo, e o aplicativo o lembra.
+
+O painel é a porta em Dart do painel Python. Os testes conferem os dois lados
+contra os mesmos arquivos: o link gerado no navegador sai igual, byte a byte,
+ao que o Python gera com o mesmo sal e nonce, e a comparação com a turma dá os
+mesmos escores (`mobile/eyelearn_core/test/teacher_vault_test.dart`,
+`class_comparison_test.dart`).
+
+### Versão anterior: painel para computador (PyQt6)
+
+O primeiro painel, em PyQt6 com banco SQLite, continua no repositório
+(`eyelearn/panel`, `eyelearn/storage`). Faz o mesmo que o painel web, mas
+precisa de Python instalado no computador da escola, e foi isso que o painel
+web resolveu. As regras (PIN, códigos, formato do link, comparação) são as
+mesmas nos dois.
+
+```bash
+pip install -e ".[panel]"
+python -m eyelearn.panel
+```
 
 O banco é um arquivo SQLite na pasta de dados do usuário
 (`%APPDATA%\EyeLearn\eyelearn.db` no Windows, `~/.local/share/eyelearn/` no
-Linux); `--db ARQUIVO` usa outro. Não há servidor.
+Linux); `--db ARQUIVO` usa outro.
 
-Para experimentar sem celular, com uma turma fictícia já cadastrada (login
-`demo`, senha `demonstracao`):
+Para experimentar com uma turma fictícia já cadastrada (login `demo`, senha
+`demonstracao`):
 
 ```bash
 python scripts/make_demo_class.py --out /tmp/turma --db /tmp/demo.db
@@ -195,7 +230,7 @@ python -m eyelearn.panel --db /tmp/demo.db
 python -m eyelearn.panel /tmp/turma          # ou só as sessões, sem banco nem login
 ```
 
-### Banco de dados
+### Banco de dados da versão anterior
 
 O esquema (`eyelearn/storage/schema.py`) parte do banco do projeto anterior,
 EyeLearn-Apollo, que usava MySQL com as tabelas `Alunos`, `Sessoes` e
@@ -216,7 +251,7 @@ cada repetição. O PIN de quatro dígitos tem dez mil combinações e não resi
 quem tiver o arquivo do banco: quem o protege é o bloqueio na tela, e o arquivo
 ficar no computador do professor.
 
-O que o painel mostra, e o que ele recusa mostrar:
+### O que o painel mostra, e o que ele recusa mostrar
 
 - **Escore z por característica**, não a pontuação do modelo. A comparação é
   contra a turma da criança, não contra um modelo clínico: o modelo foi
@@ -249,9 +284,11 @@ O que o painel mostra, e o que ele recusa mostrar:
 - Inferência local a partir de um artefato JSON exportado do scikit-learn, sem
   TensorFlow Lite e sem dependência nativa de aprendizado de máquina
 
-**Painel do professor (computador)**
+**Painel do professor (navegador do computador)**
 
-- **PyQt6** e **Matplotlib**
+- **Flutter** e **Dart**, compilados para web, no mesmo site do aplicativo do aluno
+- **WebCrypto** (PBKDF2) e **AES-256-GCM** — o cofre do professor, cifrado com a senha dele
+- Versão anterior: **PyQt6** e **Matplotlib** (`eyelearn/panel`)
 
 ## Privacidade
 
@@ -259,7 +296,7 @@ Os quadros da câmera são processados na memória do próprio aparelho e descar
 
 A sessão não carrega nome de criança, apenas um código pseudônimo. Também não carrega o percurso bruto do olhar: só as características agregadas, que é o que o painel precisa.
 
-O nome completo e a data de nascimento ficam só no banco do professor, no computador dele. O link da turma leva, cifrados, o primeiro nome com a inicial do sobrenome ("Ana S."), o código e o PIN em forma de hash -- é o mínimo para a criança se reconhecer na tela. Quem tem o link e o código (as famílias do grupo) consegue ver esses nomes de exibição, como já vê no grupo da turma. Apagar um aluno no painel apaga junto todas as sessões dele (LGPD, art. 18, VI).
+O nome completo e a data de nascimento ficam só no cofre do professor, no navegador dele, cifrados com a senha que só ele conhece. O link da turma leva, cifrados, o primeiro nome com a inicial do sobrenome ("Ana S."), o código e o PIN em forma de hash -- é o mínimo para a criança se reconhecer na tela. Quem tem o link e o código (as famílias do grupo) consegue ver esses nomes de exibição, como já vê no grupo da turma. Apagar um aluno no painel apaga junto todas as sessões dele (LGPD, art. 18, VI).
 
 Imagem facial é dado biométrico e, portanto, dado pessoal sensível segundo a [Lei Geral de Proteção de Dados](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm).
 
