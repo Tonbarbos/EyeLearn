@@ -8,15 +8,12 @@ outro.
 
 from __future__ import annotations
 
-import json
 from datetime import date, datetime
-from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
-    QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -252,7 +249,7 @@ class NewClassDialog(QDialog):
 
 
 class StudentsDialog(QDialog):
-    """Turmas e alunos do professor, e a lista que vai para o celular."""
+    """Turmas e alunos do professor."""
 
     def __init__(
         self,
@@ -280,9 +277,6 @@ class StudentsDialog(QDialog):
         new_class = _ghost("Nova turma…")
         new_class.clicked.connect(self.ask_new_class)
         top.addWidget(new_class)
-        self.export_button = QPushButton("Exportar lista para o celular…")
-        self.export_button.clicked.connect(self.ask_export_roster)
-        top.addWidget(self.export_button)
         root.addLayout(top)
 
         self.table = QTableWidget(0, 3)
@@ -327,9 +321,10 @@ class StudentsDialog(QDialog):
 
         note = QLabel(
             "O PIN aparece uma vez, logo depois do cadastro. Anote e entregue à "
-            "criança; se ela esquecer, gere outro. A lista exportada para o "
-            "celular leva só o primeiro nome com a inicial, o código e o PIN "
-            "em forma ilegível; o nome completo e a data de nascimento ficam aqui."
+            "criança; se ela esquecer, gere outro e mande o link da turma de "
+            "novo. O link leva só o primeiro nome com a inicial, o código e o "
+            "PIN em forma ilegível; o nome completo e a data de nascimento "
+            "ficam aqui."
         )
         note.setProperty("role", "muted")
         note.setWordWrap(True)
@@ -357,7 +352,7 @@ class StudentsDialog(QDialog):
 
     def refresh_students(self) -> None:
         has_class = self.class_id is not None
-        for widget in (self.export_button, self.add_button, self.new_name,
+        for widget in (self.add_button, self.new_name,
                        self.new_birth, self.reset_button, self.delete_button):
             widget.setEnabled(has_class)
         self.table.setRowCount(0)
@@ -444,27 +439,6 @@ class StudentsDialog(QDialog):
         self.store.delete_student(self.teacher, student_id)
         self.refresh_students()
 
-    def export_roster(self, path: Path) -> Path:
-        roster = self.store.roster(self.teacher, self.class_id)
-        path.write_text(json.dumps(roster, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8")
-        return path
-
-    def ask_export_roster(self) -> None:
-        caption = self.class_box.currentText().split(" · ")[0]
-        suggested = f"turma_{_slug(caption)}.eyelearn.json"
-        chosen, _ = QFileDialog.getSaveFileName(
-            self, "Exportar lista da turma", suggested, "Lista de turma (*.json)"
-        )
-        if chosen:
-            self.export_roster(Path(chosen))
-            QMessageBox.information(
-                self,
-                "Lista exportada",
-                "Envie o arquivo para o celular e abra no EyeLearn. As crianças "
-                "vão escolher o próprio nome e digitar o PIN.",
-            )
-
 
 def _show_pin(parent: QWidget, name: str, pin: str) -> None:
     box = QMessageBox(parent)
@@ -481,11 +455,6 @@ def _show_pin(parent: QWidget, name: str, pin: str) -> None:
 def _class_caption(classroom: Classroom) -> str:
     extra = " · ".join(part for part in (classroom.grade, classroom.school) if part)
     return f"{classroom.name} · {extra}" if extra else classroom.name
-
-
-def _slug(text: str) -> str:
-    kept = "".join(c if c.isalnum() else "_" for c in text.lower())
-    return "_".join(part for part in kept.split("_") if part) or "turma"
 
 
 def _escape(text: str) -> str:

@@ -7,16 +7,21 @@ import 'package:test/test.dart';
 String hex(List<int> bytes) =>
     bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
-/// Lista e PINs gerados pelo Python (`scripts/make_roster_fixture.py`).
+/// Pacote cifrado, código e PINs gerados pelo Python
+/// (`scripts/make_roster_fixture.py`).
 final fixture = jsonDecode(
-  File('assets/roster_example.json').readAsStringSync(),
+  File('assets/class_package_example.json').readAsStringSync(),
 ) as Map<String, dynamic>;
 
-final roster = Roster.fromJson(fixture['roster'] as Map<String, dynamic>);
+final roster = Roster.openLink(
+  'https://exemplo.org/#t=${fixture['fragment']}',
+  fixture['code'] as String,
+);
 final pins = (fixture['pins_for_tests'] as Map).cast<String, String>();
+final today = DateTime.parse(fixture['today'] as String);
 
 Map<String, dynamic> validRoster() =>
-    jsonDecode(jsonEncode(fixture['roster'])) as Map<String, dynamic>;
+    jsonDecode(jsonEncode(fixture['expected'])) as Map<String, dynamic>;
 
 void main() {
   group('PBKDF2-HMAC-SHA256', () {
@@ -95,35 +100,134 @@ void main() {
     }
   });
 
-  group('Roster.fromJson', () {
-    test('lê o arquivo do painel', () {
+  group('link da turma', () {
+    test('abre com o código, como o Python fechou', () {
       expect(roster.className, '5º A (exemplo)');
       expect(roster.students, hasLength(4));
+      expect(roster.activities, hasLength(4));
     });
 
+    test('aceita o código sem hífen e em minúsculas', () {
+      final code =
+          (fixture['code'] as String).replaceAll('-', '').toLowerCase();
+      expect(
+        Roster.openLink(fixture['fragment'] as String, ' $code ').className,
+        roster.className,
+      );
+    });
+
+    test('código errado não abre', () {
+      expect(
+        () => Roster.openLink(fixture['fragment'] as String, 'AAAA-AAAA'),
+        throwsA(
+          isA<FormatException>()
+              .having((e) => e.message, 'message', contains('código')),
+        ),
+      );
+    });
+
+    test('link cortado não abre', () {
+      final fragment = fixture['fragment'] as String;
+      expect(
+        () => Roster.openLink(
+          fragment.substring(0, fragment.length - 10),
+          fixture['code'] as String,
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('link com um caractere trocado não abre', () {
+      final fragment = fixture['fragment'] as String;
+      final middle = fragment.length ~/ 2;
+      final swapped = fragment[middle] == 'A' ? 'B' : 'A';
+      final edited = fragment.replaceRange(middle, middle + 1, swapped);
+      expect(
+        () => Roster.openLink(edited, fixture['code'] as String),
+        throwsFormatException,
+      );
+    });
+
+    for (final text in ['', 'https://exemplo.org/', '#t=', '#t=!!!!']) {
+      test('"$text" não é link de turma', () {
+        expect(
+          () => Roster.openLink(text, fixture['code'] as String),
+          throwsFormatException,
+        );
+      });
+    }
+
+    test('fragmentOf aceita link inteiro ou só o pacote', () {
+      expect(Roster.fragmentOf('https://x.org/a/#t=ABC'), 'ABC');
+      expect(Roster.fragmentOf('#t=ABC'), 'ABC');
+      expect(Roster.fragmentOf('ABC'), 'ABC');
+    });
+  });
+
+  group('Roster.fromJson', () {
     test('recusa outro formato', () {
       final json = validRoster()..['format'] = 'eyelearn-sessao';
       expect(() => Roster.fromJson(json), throwsFormatException);
     });
 
     test('recusa versão desconhecida', () {
-      final json = validRoster()..['format_version'] = 3;
-      expect(() => Roster.fromJson(json), throwsFormatException);
-    });
-
-    test('recusa a versão 1, que não tem a chave da turma', () {
-      final json = validRoster()
-        ..['format_version'] = 1
-        ..remove('class_uid')
-        ..remove('activity_key');
+      final json = validRoster()..['format_version'] = 2;
       expect(() => Roster.fromJson(json), throwsFormatException);
     });
 
     test('recusa código repetido', () {
       final json = validRoster();
       final students = json['students'] as List;
-      students.add(Map<String, dynamic>.from(students.first as Map));
+      students.add(List<dynamic>.from(students.first as List));
       expect(() => Roster.fromJson(json), throwsFormatException);
+    });
+  });
+
+  group('atividades de casa', () {
+    // O exemplo tem uma de cada: encerrada, duas abertas, uma que não começou.
+    final now = today.add(const Duration(hours: 12));
+
+    test('estados no dia de referência', () {
+      expect(
+        [for (final a in roster.activities) a.statusAt(now, done: false)],
+        [
+          HomeworkStatus.closed,
+          HomeworkStatus.pending,
+          HomeworkStatus.pending,
+          HomeworkStatus.upcoming,
+        ],
+      );
+    });
+
+    test('feita vale mais que encerrada', () {
+      expect(
+        roster.activities.first.statusAt(now, done: true),
+        HomeworkStatus.done,
+      );
+    });
+
+    test('o prazo vale até o último segundo do dia', () {
+      final open = roster.activities[1];
+      expect(open.statusAt(open.dueAt, done: false), HomeworkStatus.pending);
+      expect(
+        open.statusAt(
+          open.dueAt.add(const Duration(seconds: 1)),
+          done: false,
+        ),
+        HomeworkStatus.closed,
+      );
+    });
+
+    test('tarefas e códigos chegam como o painel mandou', () {
+      final expected = (validRoster()['activities'] as List).cast<List>();
+      expect(
+        [
+          for (final a in roster.activities) [a.code, a.task]
+        ],
+        [
+          for (final e in expected) [e[0], e[1]]
+        ],
+      );
     });
   });
 

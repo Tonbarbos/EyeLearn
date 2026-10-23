@@ -10,11 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from eyelearn.storage import auth, db
+from eyelearn.storage import auth, db, package
 from eyelearn.storage.schema import MIGRATIONS as SCHEMA
 from eyelearn.storage.store import (
     CODE_ALPHABET,
@@ -22,6 +23,7 @@ from eyelearn.storage.store import (
     ROSTER_FORMAT,
     ROSTER_FORMAT_VERSION,
     AccountLockedError,
+    ActivityMismatchError,
     NotFoundError,
     Store,
     display_names,
@@ -451,7 +453,9 @@ class TestIsolationBetweenTeachers:
             lambda s, t, c, a: s.students(t, c),
             lambda s, t, c, a: s.add_student(t, c, "Intruso"),
             lambda s, t, c, a: s.sessions(t, c),
-            lambda s, t, c, a: s.roster(t, c),
+            lambda s, t, c, a: s.class_package(t, c),
+            lambda s, t, c, a: s.share_link(t, c),
+            lambda s, t, c, a: s.create_activity(t, c, "text", date.today()),
             lambda s, t, c, a: s.delete_class(t, c),
             lambda s, t, c, a: s.delete_student(t, a),
             lambda s, t, c, a: s.reset_pin(t, a),
@@ -526,25 +530,6 @@ class TestSessions:
             assert store.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
 
 
-class TestRoster:
-    def test_carries_only_what_the_phone_needs(self, store, teacher, classroom):
-        store.add_student(teacher, classroom.id, "Ana Luiza Souza", "2016-03-09", pin="2580")
-        roster = store.roster(teacher, classroom.id)
-        assert roster["format"] == ROSTER_FORMAT
-        [entry] = roster["students"]
-        assert set(entry) == {"code", "display_name", "pin_hash"}
-        assert entry["display_name"] == "Ana S."
-        assert auth.verify_secret("2580", entry["pin_hash"])
-        text = json.dumps(roster)
-        assert "Luiza" not in text
-        assert "2016" not in text.replace(roster["exported_at"], "")
-
-    def test_survives_a_round_trip_through_json(self, store, teacher, classroom):
-        store.add_student(teacher, classroom.id, "Ana")
-        roster = store.roster(teacher, classroom.id)
-        assert json.loads(json.dumps(roster)) == roster
-
-
 class TestDisplayNames:
     def test_first_name_and_initial(self):
         assert display_names(["Ana Luiza Souza", "Bruno"]) == ["Ana S.", "Bruno"]
@@ -574,157 +559,116 @@ class TestOpen:
         second.close()
 
 
-class TestRosterFixture:
-    """O arquivo que a suíte Dart usa para conferir o PIN do lado do celular."""
-
-    FIXTURE = (
-        Path(__file__).resolve().parent.parent
-        / "mobile/eyelearn_core/assets/roster_example.json"
-    )
-
-    def test_pins_match_their_hashes(self):
-        fixture = json.loads(self.FIXTURE.read_text(encoding="utf-8"))
-        students = fixture["roster"]["students"]
-        assert {s["code"] for s in students} == set(fixture["pins_for_tests"])
-        for student in students:
-            pin = fixture["pins_for_tests"][student["code"]]
-            assert auth.verify_secret(pin, student["pin_hash"])
-
-    def test_is_in_the_current_format(self):
-        roster = json.loads(self.FIXTURE.read_text(encoding="utf-8"))["roster"]
-        assert roster["format"] == ROSTER_FORMAT
-        assert roster["format_version"] == ROSTER_FORMAT_VERSION
-        assert all(
-            s["pin_hash"].startswith(f"{auth.PIN_SCHEME}${auth.PIN_ITERATIONS}$")
-            for s in roster["students"]
-        )
-
-    def test_example_ticket_verifies(self):
-        fixture = json.loads(self.FIXTURE.read_text(encoding="utf-8"))
-        roster, tickets = fixture["roster"], fixture["tickets_for_tests"]
-        parsed = ticket.verify(
-            tickets["valid"], roster["class_uid"], roster["activity_key"],
-            now=datetime.fromisoformat(tickets["opened_at"]),
-        )
-        assert parsed.activity_code == tickets["activity_code"]
+TODAY = date(2026, 10, 20)
 
 
-from datetime import UTC, datetime, timedelta  # noqa: E402
-
-from eyelearn.storage import ticket  # noqa: E402
-from eyelearn.storage.store import ActivityMismatchError  # noqa: E402
-
-OPENED = datetime(2026, 10, 13, 10, 0, tzinfo=UTC)
-KEY = "11" * 32
-
-
-class TestTicket:
-    def issue(self, **overrides):
-        args = {"class_uid": "abc123", "key_hex": KEY, "activity_code": "K7Q2XP",
-                "task": "text", "expires_at": OPENED + timedelta(minutes=15)}
-        args.update(overrides)
-        return ticket.issue(**args)
+class TestPackageCipher:
+    PAYLOAD = {"class_name": "5º A", "students": [["ABC234", "Ana S.", "x", "y"]]}
 
     def test_roundtrip(self):
-        parsed = ticket.verify(self.issue(), "abc123", KEY, now=OPENED)
-        assert parsed.activity_code == "K7Q2XP"
-        assert parsed.task == "text"
-        assert parsed.expires_at == OPENED + timedelta(minutes=15)
+        sealed = package.seal(self.PAYLOAD, "K7Q2XP4M")
+        assert package.open_sealed(sealed, "K7Q2XP4M") == self.PAYLOAD
 
-    def test_fits_a_small_qr(self):
-        # Versão 5 do QR comporta ~100 caracteres no nível M: legível de longe
-        # quando projetado.
-        assert len(self.issue()) < 90
+    def test_code_is_forgiving_about_case_and_hyphen(self):
+        sealed = package.seal(self.PAYLOAD, "K7Q2XP4M")
+        assert package.open_sealed(sealed, " k7q2-xp4m ") == self.PAYLOAD
 
-    def test_other_class(self):
-        with pytest.raises(ticket.TicketError, match="outra turma"):
-            ticket.verify(self.issue(), "zzz999", KEY, now=OPENED)
+    def test_wrong_code(self):
+        sealed = package.seal(self.PAYLOAD, "K7Q2XP4M")
+        with pytest.raises(package.PackageError, match="código"):
+            package.open_sealed(sealed, "K7Q2XP4N")
 
-    def test_wrong_key_is_a_forgery(self):
-        with pytest.raises(ticket.TicketError, match="inválido"):
-            ticket.verify(self.issue(key_hex="22" * 32), "abc123", KEY, now=OPENED)
+    def test_tampering_is_detected(self):
+        # GCM autentica: um bit trocado no link não abre um pacote alterado.
+        sealed = package.seal(self.PAYLOAD, "K7Q2XP4M")
+        flipped = sealed[:-5] + ("A" if sealed[-5] != "A" else "B") + sealed[-4:]
+        with pytest.raises(package.PackageError):
+            package.open_sealed(flipped, "K7Q2XP4M")
 
-    @pytest.mark.parametrize("index, value", [(2, "OUTRO1"), (3, "syllables"),
-                                              (4, "9999999999")])
-    def test_any_edited_field_breaks_the_signature(self, index, value):
-        # Estender o prazo, trocar a tarefa ou a atividade de um QR antigo.
-        parts = self.issue().split(".")
-        parts[index] = value
-        with pytest.raises(ticket.TicketError, match="inválido"):
-            ticket.verify(".".join(parts), "abc123", KEY, now=OPENED)
+    @pytest.mark.parametrize("text", ["", "!!!", "AAAA"])
+    def test_garbage(self, text):
+        with pytest.raises(package.PackageError):
+            package.open_sealed(text, "K7Q2XP4M")
 
-    def test_expired(self):
-        later = OPENED + timedelta(minutes=15, seconds=121)
-        with pytest.raises(ticket.TicketError, match="fechou"):
-            ticket.verify(self.issue(), "abc123", KEY, now=later)
+    def test_names_are_not_readable_in_the_link(self):
+        sealed = package.seal({"nome": "Ana Luiza Souza"}, "K7Q2XP4M")
+        import base64
 
-    def test_grace_for_a_fast_phone_clock(self):
-        later = OPENED + timedelta(minutes=16)
-        assert ticket.verify(self.issue(), "abc123", KEY, now=later)
+        raw = base64.urlsafe_b64decode(sealed + "=" * (-len(sealed) % 4))
+        assert b"Ana" not in raw
 
-    @pytest.mark.parametrize("text", ["", "https://exemplo.com", "EYELEARN1.a.b",
-                                      "EYELEARN2.abc123.K7Q2XP.text.1.x"])
-    def test_not_a_ticket(self, text):
-        with pytest.raises(ticket.TicketError):
-            ticket.verify(text, "abc123", KEY, now=OPENED)
+    def test_each_seal_differs(self):
+        # Sal e nonce novos a cada vez: o mesmo pacote cifrado duas vezes não
+        # se repete, e um nonce nunca é reaproveitado com a mesma chave.
+        assert package.seal(self.PAYLOAD, "K7Q2XP4M") != package.seal(self.PAYLOAD, "K7Q2XP4M")
 
-    def test_unknown_task_is_refused_at_issue(self):
-        with pytest.raises(ValueError):
-            self.issue(task="desenho")
+    def test_format_code(self):
+        assert package.format_code("k7q2xp4m") == "K7Q2-XP4M"
+        assert package.normalize_code("ç-k7") == "K7"
 
 
-class TestActivities:
-    def test_open_issues_a_verifiable_qr(self, store, teacher, classroom):
-        activity = store.open_activity(teacher, classroom.id, "text", now=OPENED)
-        roster = store.roster(teacher, classroom.id)
-        parsed = ticket.verify(activity.qr_text, roster["class_uid"],
-                               roster["activity_key"], now=OPENED)
-        assert parsed.activity_code == activity.code
-        assert activity.expires_at == OPENED + timedelta(minutes=15)
+class TestHomework:
+    def test_create_and_list_by_due_date(self, store, teacher, classroom):
+        later = store.create_activity(teacher, classroom.id, "text", TODAY + timedelta(7),
+                                      today=TODAY)
+        sooner = store.create_activity(teacher, classroom.id, "syllables",
+                                       TODAY + timedelta(2), today=TODAY)
+        assert store.activities(teacher, classroom.id) == [sooner, later]
+        assert sooner.opens_on == TODAY
 
-    def test_each_class_has_its_own_key(self, store, teacher, classroom):
-        other = store.create_class(teacher, "5º B")
-        a = store.roster(teacher, classroom.id)
-        b = store.roster(teacher, other.id)
-        assert a["class_uid"] != b["class_uid"]
-        assert a["activity_key"] != b["activity_key"]
+    def test_due_is_end_of_day_local(self, store, teacher, classroom):
+        activity = store.create_activity(teacher, classroom.id, "text", TODAY, today=TODAY)
+        local = activity.due_at
+        assert (local.hour, local.minute, local.second) == (23, 59, 59)
+        assert local.tzinfo is not None
 
-    def test_duration_is_bounded(self, store, teacher, classroom):
-        with pytest.raises(ValueError):
-            store.open_activity(teacher, classroom.id, "text", minutes=0)
-        with pytest.raises(ValueError):
-            store.open_activity(teacher, classroom.id, "text", minutes=600)
+    def test_rejects_past_due(self, store, teacher, classroom):
+        with pytest.raises(ValueError, match="passou"):
+            store.create_activity(teacher, classroom.id, "text", TODAY - timedelta(1),
+                                  today=TODAY)
 
-    def test_close_early(self, store, teacher, classroom):
-        activity = store.open_activity(teacher, classroom.id, "text", now=OPENED)
-        store.close_activity(teacher, activity, now=OPENED + timedelta(minutes=4))
-        stored = store.connection.execute("SELECT expira_em FROM atividades").fetchone()[0]
-        assert stored == (OPENED + timedelta(minutes=4)).isoformat()
+    def test_rejects_due_before_opening(self, store, teacher, classroom):
+        with pytest.raises(ValueError, match="antes"):
+            store.create_activity(teacher, classroom.id, "text", TODAY + timedelta(1),
+                                  opens=TODAY + timedelta(3), today=TODAY)
 
-    def test_other_teacher_cannot_open(self, store, teacher, classroom):
+    def test_rejects_unknown_task(self, store, teacher, classroom):
+        with pytest.raises(ValueError, match="tarefa"):
+            store.create_activity(teacher, classroom.id, "desenho", TODAY, today=TODAY)
+
+    def test_delete(self, store, teacher, classroom):
+        activity = store.create_activity(teacher, classroom.id, "text", TODAY, today=TODAY)
+        store.delete_activity(teacher, activity.id)
+        assert store.activities(teacher, classroom.id) == []
+
+    def test_other_teacher_cannot_delete(self, store, teacher, classroom):
+        activity = store.create_activity(teacher, classroom.id, "text", TODAY, today=TODAY)
         other = store.create_teacher("marcos", "Marcos", "outra-senha-1")
         with pytest.raises(NotFoundError):
-            store.open_activity(other, classroom.id, "text")
+            store.delete_activity(other, activity.id)
+        assert store.activities(teacher, classroom.id) == [activity]
 
     def test_session_is_linked_to_its_activity(self, store, teacher, classroom):
         code = store.add_student(teacher, classroom.id, "Ana").student.code
-        activity = store.open_activity(teacher, classroom.id, "text")
+        activity = store.create_activity(teacher, classroom.id, "text", TODAY, today=TODAY)
         payload = make_payload(code=code) | {"activity_code": activity.code}
         assert store.import_session(teacher, payload)
-        linked = store.connection.execute("SELECT atividade_id FROM sessoes").fetchone()[0]
-        assert linked == activity.id
+        assert store.completed_activity_codes(teacher, classroom.id) == {
+            activity.code: {code}
+        }
 
     def test_activity_of_another_class_is_refused(self, store, teacher, classroom):
         code = store.add_student(teacher, classroom.id, "Ana").student.code
         other = store.create_class(teacher, "5º B")
-        foreign = store.open_activity(teacher, other.id, "text")
+        foreign = store.create_activity(teacher, other.id, "text", TODAY, today=TODAY)
         payload = make_payload(code=code) | {"activity_code": foreign.code}
         with pytest.raises(ActivityMismatchError):
             store.import_session(teacher, payload)
 
     def test_activity_of_another_task_is_refused(self, store, teacher, classroom):
         code = store.add_student(teacher, classroom.id, "Ana").student.code
-        activity = store.open_activity(teacher, classroom.id, "syllables")
+        activity = store.create_activity(teacher, classroom.id, "syllables", TODAY,
+                                         today=TODAY)
         payload = make_payload(code=code, task="text") | {"activity_code": activity.code}
         with pytest.raises(ActivityMismatchError):
             store.import_session(teacher, payload)
@@ -738,15 +682,82 @@ class TestActivities:
         assert report.imported == []
 
     def test_deleting_the_class_deletes_its_activities(self, store, teacher, classroom):
-        store.open_activity(teacher, classroom.id, "text")
+        store.create_activity(teacher, classroom.id, "text", TODAY, today=TODAY)
         store.delete_class(teacher, classroom.id)
         assert store.connection.execute("SELECT count(*) FROM atividades").fetchone()[0] == 0
 
 
-class TestUpgradeFromVersion1:
-    def test_existing_classes_get_uid_and_key(self, tmp_path):
-        # Um banco criado pela versão anterior, com turma e aluno, abre na nova
-        # sem perder nada e com a turma pronta para abrir atividade.
+class TestClassPackage:
+    def test_carries_only_what_home_needs(self, store, teacher, classroom):
+        store.add_student(teacher, classroom.id, "Ana Luiza Souza", "2016-03-09", pin="2580")
+        store.create_activity(teacher, classroom.id, "text", TODAY + timedelta(3),
+                              today=TODAY)
+        pack = store.class_package(teacher, classroom.id)
+        assert pack["format"] == ROSTER_FORMAT
+        assert pack["format_version"] == ROSTER_FORMAT_VERSION
+        [[code, name, salt, key]] = pack["students"]
+        assert name == "Ana S."
+        text = json.dumps(pack, ensure_ascii=False)
+        assert "Luiza" not in text and "2016" not in text
+        [[_, task, opens, due]] = pack["activities"]
+        assert task == "text" and opens == TODAY.isoformat()
+
+    def test_compact_pin_rebuilds_the_hash(self, store, teacher, classroom):
+        # O aplicativo remonta "pbkdf2-sha256$it$sal$chave" a partir do pacote.
+        store.add_student(teacher, classroom.id, "Ana", pin="2580")
+        pack = store.class_package(teacher, classroom.id)
+        [[_, _, salt, key]] = pack["students"]
+        import base64
+
+        def unb64(text):
+            return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)).hex()
+
+        rebuilt = f"pbkdf2-sha256${pack['pin_iterations']}${unb64(salt)}${unb64(key)}"
+        assert auth.verify_secret("2580", rebuilt)
+
+    def test_long_closed_activities_are_left_out(self, store, teacher, classroom):
+        store.create_activity(teacher, classroom.id, "text", TODAY, today=TODAY)
+        later = datetime.combine(TODAY + timedelta(30), datetime.min.time(), UTC)
+        assert store.class_package(teacher, classroom.id, now=later)["activities"] == []
+        soon = datetime.combine(TODAY + timedelta(5), datetime.min.time(), UTC)
+        assert len(store.class_package(teacher, classroom.id, now=soon)["activities"]) == 1
+
+    def test_link_opens_with_the_code(self, store, teacher, classroom):
+        store.add_student(teacher, classroom.id, "Ana")
+        shared = store.share_link(teacher, classroom.id, base_url="https://exemplo.org/app/")
+        assert shared.url.startswith("https://exemplo.org/app/#t=")
+        sealed = shared.url.split("#t=", 1)[1]
+        assert package.open_sealed(sealed, shared.access_code)["class_name"] == "5º A"
+
+    def test_code_is_stable_until_renewed(self, store, teacher, classroom):
+        first = store.access_code(teacher, classroom.id)
+        assert store.access_code(teacher, classroom.id) == first
+        renewed = store.new_access_code(teacher, classroom.id)
+        assert renewed != first and len(renewed) == package.ACCESS_CODE_LENGTH
+
+    def test_renewed_code_locks_old_links(self, store, teacher, classroom):
+        old = store.share_link(teacher, classroom.id)
+        store.new_access_code(teacher, classroom.id)
+        sealed = old.url.split("#t=", 1)[1]
+        new_code = store.access_code(teacher, classroom.id)
+        with pytest.raises(package.PackageError):
+            package.open_sealed(sealed, new_code)
+
+    def test_link_size_for_a_full_class(self, store, teacher, classroom):
+        # 35 alunos e 6 atividades: o link precisa caber numa mensagem de
+        # WhatsApp e no endereço de qualquer navegador.
+        for index in range(35):
+            store.add_student(teacher, classroom.id, f"Aluno Número{index:02d} Silva")
+        for offset in range(6):
+            store.create_activity(teacher, classroom.id, "text", TODAY + timedelta(offset),
+                                  today=TODAY)
+        assert len(store.share_link(teacher, classroom.id).url) < 8000
+
+
+class TestUpgradeFromOlderVersions:
+    def test_existing_classes_work_after_upgrade(self, tmp_path):
+        # Banco criado na versão 1, com turma: abre na versão atual, ganha
+        # identificador e passa a ter código de acesso e atividades de casa.
         path = tmp_path / "antigo.db"
         connection = db.connect(path)
         db.migrate(connection, SCHEMA[:1])
@@ -761,8 +772,66 @@ class TestUpgradeFromVersion1:
         upgraded = Store.open(path)
         teacher = upgraded.authenticate("helena", "senha-boa-123")
         [classroom] = upgraded.classes(teacher)
-        roster = upgraded.roster(teacher, classroom.id)
-        assert len(roster["class_uid"]) == 16
-        assert len(roster["activity_key"]) == 64
-        upgraded.open_activity(teacher, classroom.id, "text")
+        assert len(upgraded.class_package(teacher, classroom.id)["class_uid"]) == 16
+        upgraded.create_activity(teacher, classroom.id, "text", date.today())
+        assert upgraded.share_link(teacher, classroom.id).access_code
         upgraded.close()
+
+    def test_version_2_activities_still_read(self, tmp_path):
+        # Atividades de QR da versão 2 gravavam instante, não dia.
+        path = tmp_path / "v2.db"
+        connection = db.connect(path)
+        db.migrate(connection, SCHEMA[:2])
+        connection.execute(
+            "INSERT INTO professores (usuario, nome, senha_hash) VALUES (?, ?, ?)",
+            ("helena", "Helena", auth.hash_password("senha-boa-123")),
+        )
+        connection.execute(
+            "INSERT INTO turmas (professor_id, nome, uid) VALUES (1, 'A', 'u1')"
+        )
+        connection.execute(
+            "INSERT INTO atividades (turma_id, codigo, tarefa, aberta_em, expira_em)"
+            " VALUES (1, 'X', 'text', '2026-10-13T10:00:00+00:00',"
+            " '2026-10-13T10:15:00+00:00')"
+        )
+        connection.commit()
+        connection.close()
+        upgraded = Store.open(path)
+        teacher = upgraded.authenticate("helena", "senha-boa-123")
+        [activity] = upgraded.activities(teacher, 1)
+        assert activity.opens_on == date(2026, 10, 13)
+        upgraded.close()
+
+
+class TestPackageFixture:
+    """O pacote de exemplo que a suíte Dart abre (scripts/make_roster_fixture.py)."""
+
+    FIXTURE = (
+        Path(__file__).resolve().parent.parent
+        / "mobile/eyelearn_core/assets/class_package_example.json"
+    )
+
+    def load(self):
+        return json.loads(self.FIXTURE.read_text(encoding="utf-8"))
+
+    def test_opens_with_its_code(self):
+        fixture = self.load()
+        assert package.open_sealed(fixture["fragment"], fixture["code"]) == fixture["expected"]
+
+    def test_is_in_the_current_format(self):
+        expected = self.load()["expected"]
+        assert expected["format"] == ROSTER_FORMAT
+        assert expected["format_version"] == ROSTER_FORMAT_VERSION
+
+    def test_pins_match(self):
+        import base64
+
+        fixture = self.load()
+        expected = fixture["expected"]
+
+        def unb64(text):
+            return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)).hex()
+
+        for code, _, salt, key in expected["students"]:
+            stored = f"pbkdf2-sha256${expected['pin_iterations']}${unb64(salt)}${unb64(key)}"
+            assert auth.verify_secret(fixture["pins_for_tests"][code], stored)

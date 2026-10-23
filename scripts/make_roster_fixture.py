@@ -1,13 +1,16 @@
-"""Gera a lista de turma de exemplo que a suíte Dart verifica.
+"""Gera o pacote de turma de exemplo que a suíte Dart abre.
 
-O PIN é conferido no celular contra o hash que o painel gravou. Se o PBKDF2 do
-Dart divergisse do Python em qualquer detalhe -- codificação do PIN, ordem do
-sal, tamanho da chave --, nenhuma criança conseguiria entrar, e nenhum teste de
-um lado só perceberia. Este arquivo é a fronteira entre os dois.
+O link que o professor manda às famílias é cifrado pelo Python e aberto pelo
+Dart, no navegador. Se os dois lados divergirem em qualquer detalhe --
+derivação da chave, ordem dos bytes, dados associados da cifra, formato
+compacto dos PINs --, nenhuma família consegue abrir a turma, e nenhum teste
+de um lado só perceberia. Este arquivo é a fronteira entre os dois.
 
-O arquivo leva, além da lista, os PINs em claro (``pins_for_tests``). É
-fixture: os alunos são fictícios, e o formato real exportado pelo painel não
-tem esse campo.
+O arquivo leva, além do pacote cifrado, o código da turma, os PINs em claro e
+o conteúdo esperado. É fixture: alunos fictícios. Sal e nonce são fixos para
+o arquivo não mudar a cada execução.
+
+Também gera a turma da pré-visualização no navegador, que é o mesmo pacote.
 
 Uso::
 
@@ -18,21 +21,18 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from eyelearn.storage import package  # noqa: E402
 from eyelearn.storage.store import Store  # noqa: E402
 
-FIXTURE = REPOSITORY_ROOT / "mobile" / "eyelearn_core" / "assets" / "roster_example.json"
-
-#: A pré-visualização no navegador usa a mesma lista, e mostra os PINs na tela
-#: para quem a experimenta. Copiada pelo mesmo motivo do modelo: o pacote Dart
-#: puro não declara ativos Flutter.
-DEMO_ROSTER = REPOSITORY_ROOT / "mobile" / "eyelearn_app" / "assets" / "demo_roster.json"
+FIXTURE = REPOSITORY_ROOT / "mobile/eyelearn_core/assets/class_package_example.json"
+DEMO = REPOSITORY_ROOT / "mobile" / "eyelearn_app" / "assets" / "demo_class.json"
 
 STUDENTS = [
     ("Ana Luiza Souza", "2580"),
@@ -40,6 +40,12 @@ STUDENTS = [
     ("João da Silva", "4719"),
     ("Ana Souza Prado", "0862"),
 ]
+
+#: Dia de referência do exemplo. A pré-visualização usa este dia como "hoje",
+#: para as atividades aparecerem com os mesmos estados em qualquer data.
+TODAY = date(2026, 10, 21)
+
+CODE = "K7Q2XP4M"
 
 
 def main() -> int:
@@ -50,35 +56,35 @@ def main() -> int:
     for name, pin in STUDENTS:
         new = store.add_student(teacher, classroom.id, name, pin=pin)
         pins[new.student.code] = pin
-    roster = store.roster(teacher, classroom.id)
 
-    # QR de atividade com instante fixo, para o Dart conferir a assinatura e o
-    # prazo contra o mesmo relógio. E um de outra turma, que tem de ser recusado.
-    opened = datetime(2026, 10, 13, 10, 0, tzinfo=UTC)
-    activity = store.open_activity(teacher, classroom.id, "text", minutes=15, now=opened)
-    other = store.create_class(teacher, "5º B (exemplo)")
-    other_activity = store.open_activity(teacher, other.id, "text", now=opened)
+    # Uma atividade encerrada, duas abertas e uma que ainda não começou: os
+    # quatro estados que o aplicativo mostra.
+    opens = TODAY - timedelta(days=6)
+    store.create_activity(teacher, classroom.id, "syllables", TODAY - timedelta(days=2),
+                          opens=opens, today=opens)
+    store.create_activity(teacher, classroom.id, "text", TODAY + timedelta(days=3),
+                          opens=opens, today=opens)
+    store.create_activity(teacher, classroom.id, "pseudotext", TODAY + timedelta(days=6),
+                          opens=opens, today=opens)
+    store.create_activity(teacher, classroom.id, "text", TODAY + timedelta(days=12),
+                          opens=TODAY + timedelta(days=5), today=opens)
+
+    now = datetime.combine(TODAY, datetime.min.time(), UTC)
+    payload = store.class_package(teacher, classroom.id, now=now)
     store.close()
 
-    tickets = {
-        "valid": activity.qr_text,
-        "other_class": other_activity.qr_text,
-        "activity_code": activity.code,
-        "task": activity.task,
-        "opened_at": opened.isoformat(),
-        "expires_at": activity.expires_at.isoformat(),
+    sealed = package.seal(payload, CODE, salt=bytes(range(16)), nonce=bytes(range(12)))
+    fixture = {
+        "fragment": sealed,
+        "code": package.format_code(CODE),
+        "today": TODAY.isoformat(),
+        "pins_for_tests": pins,
+        "expected": payload,
     }
-    text = (
-        json.dumps(
-            {"roster": roster, "pins_for_tests": pins, "tickets_for_tests": tickets},
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n"
-    )
-    for path in (FIXTURE, DEMO_ROSTER):
+    text = json.dumps(fixture, ensure_ascii=False, indent=2) + "\n"
+    for path in (FIXTURE, DEMO):
         path.write_text(text, encoding="utf-8")
-        print(f"escrito: {path}")
+        print(f"escrito: {path.relative_to(REPOSITORY_ROOT)}")
     return 0
 
 

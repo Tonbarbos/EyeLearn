@@ -1,15 +1,18 @@
-/// Lista da turma e login do aluno no aparelho.
+/// A turma no aparelho: alunos, atividades de casa e login do aluno.
 ///
-/// O professor cadastra a turma no painel e exporta este arquivo para o
-/// celular. A criança toca no próprio nome e digita o PIN de quatro dígitos; o
-/// aparelho confere o PIN contra o hash da lista, offline. Não há servidor.
+/// A atividade é dever de casa. O professor manda às famílias um link e um
+/// código de turma; o pacote da turma vai cifrado no próprio link, depois do
+/// `#` (ver [Roster.openLink] e `eyelearn/storage/package.py`). Em casa, o
+/// responsável abre o link e digita o código uma vez; a criança toca no
+/// próprio nome e digita o PIN, conferido aqui mesmo, offline.
 ///
-/// A lista leva só o nome de exibição ("Ana S."), o código pseudônimo e o hash
-/// do PIN. A sessão que sai do aparelho leva o código, não o nome: a
-/// correspondência fica no banco do professor.
+/// O pacote leva só o nome de exibição ("Ana S."), o código pseudônimo e o
+/// hash do PIN de cada aluno, e as atividades com tarefa e prazo. A sessão que
+/// sai do aparelho leva o código do aluno e o da atividade, não o nome.
 ///
-/// O hash é o mesmo que `eyelearn/storage/auth.py` grava (PBKDF2-HMAC-SHA256),
-/// e `test/roster_test.dart` confere os dois lados contra o mesmo arquivo.
+/// O hash do PIN é o mesmo que `eyelearn/storage/auth.py` grava
+/// (PBKDF2-HMAC-SHA256), e `test/roster_test.dart` confere os dois lados
+/// contra o mesmo arquivo.
 library;
 
 import 'dart:convert';
@@ -17,13 +20,27 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:pointycastle/export.dart' as pc;
 
 /// Identificador do formato. Tem de coincidir com `ROSTER_FORMAT` em
 /// `eyelearn/storage/store.py`.
 const rosterFormat = 'eyelearn-turma';
-const rosterFormatVersion = 2;
+
+/// Versão 3: pacote compacto, com atividades, que chega pelo link.
+const rosterFormatVersion = 3;
 
 const pinLength = 4;
+
+/// Parâmetros do pacote cifrado; iguais aos de `eyelearn/storage/package.py`.
+const packageVersion = 1;
+const _saltBytes = 16;
+const _nonceBytes = 12;
+const _tagBytes = 16;
+const packageKdfIterations = 50000;
+const _aad = 'eyelearn-turma';
+
+/// Chave do fragmento do link: `https://.../#t=<pacote>`.
+const packageFragmentKey = 't';
 
 class RosterStudent {
   final String code;
@@ -40,68 +57,191 @@ class RosterStudent {
   bool checkPin(String pin) => verifyPin(pin, pinHash);
 }
 
+/// Em que pé está uma atividade para um aluno.
+enum HomeworkStatus {
+  /// Ainda não começou: aparece com a data de início.
+  upcoming,
+
+  /// Dentro do prazo e não feita.
+  pending,
+
+  /// Já feita neste aparelho.
+  done,
+
+  /// Prazo encerrado sem ter sido feita.
+  closed,
+}
+
+class HomeworkActivity {
+  /// Vai na sessão: é o que o painel usa para ligar a gravação à atividade.
+  final String code;
+  final String task;
+
+  /// Dia de início, sem hora (o primeiro instante do dia, no fuso local).
+  final DateTime opensOn;
+
+  /// Fim do prazo, com fuso.
+  final DateTime dueAt;
+
+  const HomeworkActivity({
+    required this.code,
+    required this.task,
+    required this.opensOn,
+    required this.dueAt,
+  });
+
+  HomeworkStatus statusAt(DateTime now, {required bool done}) {
+    if (done) return HomeworkStatus.done;
+    if (now.isAfter(dueAt)) return HomeworkStatus.closed;
+    if (now.isBefore(opensOn)) return HomeworkStatus.upcoming;
+    return HomeworkStatus.pending;
+  }
+}
+
 class Roster {
   final String className;
 
-  /// Identificador público da turma; o QR da atividade traz o mesmo.
+  /// Identificador público da turma.
   final String classUid;
-
-  /// Chave que confere a assinatura do QR. Ver `activity.dart`.
-  final String activityKey;
 
   final String exportedAt;
   final List<RosterStudent> students;
+  final List<HomeworkActivity> activities;
 
   const Roster({
     required this.className,
     required this.classUid,
-    required this.activityKey,
     required this.exportedAt,
     required this.students,
+    this.activities = const [],
   });
 
-  /// Lê a lista exportada pelo painel.
+  /// Lê o pacote já decifrado (o JSON compacto do painel).
   ///
   /// Lança [FormatException] se o formato ou a versão não forem os esperados:
-  /// aceitar um arquivo qualquer deixaria a criança escolher um nome que não
+  /// aceitar um pacote qualquer deixaria a criança escolher um nome que não
   /// corresponde a aluno nenhum, e a sessão chegaria ao painel sem dono.
   factory Roster.fromJson(Map<String, dynamic> json) {
     if (json['format'] != rosterFormat) {
-      throw const FormatException('o arquivo não é uma lista de turma');
+      throw const FormatException('o link não é de uma turma do EyeLearn');
     }
     if (json['format_version'] != rosterFormatVersion) {
       throw FormatException(
-        'versão de lista não suportada: ${json['format_version']}',
+        'versão de turma não suportada: ${json['format_version']}; '
+        'peça ao professor um link novo',
       );
     }
+    final iterations = json['pin_iterations'] as int;
     final entries = json['students'];
     if (entries is! List) {
-      throw const FormatException('lista de turma sem alunos');
+      throw const FormatException('turma sem alunos');
     }
     final students = [
-      for (final entry in entries.cast<Map<String, dynamic>>())
+      for (final entry in entries.cast<List<dynamic>>())
         RosterStudent(
-          code: entry['code'] as String,
-          displayName: entry['display_name'] as String,
-          pinHash: entry['pin_hash'] as String,
+          code: entry[0] as String,
+          displayName: entry[1] as String,
+          pinHash: 'pbkdf2-sha256\$$iterations'
+              '\$${_hex(_unb64(entry[2] as String))}'
+              '\$${_hex(_unb64(entry[3] as String))}',
         ),
     ];
     final codes = {for (final s in students) s.code};
     if (codes.length != students.length) {
-      throw const FormatException('código de aluno repetido na lista');
+      throw const FormatException('código de aluno repetido na turma');
     }
+    final activities = [
+      for (final entry
+          in ((json['activities'] as List?) ?? const []).cast<List<dynamic>>())
+        HomeworkActivity(
+          code: entry[0] as String,
+          task: entry[1] as String,
+          opensOn: DateTime.parse(entry[2] as String),
+          dueAt: DateTime.parse(entry[3] as String),
+        ),
+    ];
     return Roster(
       className: json['class_name'] as String,
       classUid: json['class_uid'] as String,
-      activityKey: json['activity_key'] as String,
       exportedAt: json['exported_at'] as String,
       students: List.unmodifiable(students),
+      activities: List.unmodifiable(activities),
     );
   }
 
   factory Roster.fromJsonString(String source) =>
       Roster.fromJson(jsonDecode(source) as Map<String, dynamic>);
+
+  /// Decifra o pacote do link com o código da turma.
+  ///
+  /// Lança [FormatException] com uma frase para a tela: código errado, link
+  /// cortado ou de outra versão. Código errado e link alterado dão o mesmo
+  /// erro -- a cifra autenticada não distingue, e não precisa.
+  static String openSealed(String sealed, String code) {
+    final Uint8List blob;
+    try {
+      blob = _unb64(sealed);
+    } on FormatException {
+      throw const FormatException('o link está incompleto');
+    }
+    if (blob.length < 1 + _saltBytes + _nonceBytes + _tagBytes ||
+        blob[0] != packageVersion) {
+      throw const FormatException(
+        'o link está incompleto ou é de outra versão',
+      );
+    }
+    final salt = blob.sublist(1, 1 + _saltBytes);
+    final nonce = blob.sublist(1 + _saltBytes, 1 + _saltBytes + _nonceBytes);
+    final sealedBody = blob.sublist(1 + _saltBytes + _nonceBytes);
+    final key = pbkdf2Sha256(
+      ascii.encode(normalizeClassCode(code)),
+      salt,
+      packageKdfIterations,
+      32,
+    );
+    final cipher = pc.GCMBlockCipher(pc.AESEngine())
+      ..init(
+        false,
+        pc.AEADParameters(
+          pc.KeyParameter(key),
+          _tagBytes * 8,
+          nonce,
+          Uint8List.fromList(ascii.encode(_aad)),
+        ),
+      );
+    try {
+      return utf8.decode(cipher.process(sealedBody));
+    } on pc.InvalidCipherTextException {
+      throw const FormatException('o código da turma não confere');
+    } on ArgumentError {
+      throw const FormatException('o código da turma não confere');
+    }
+  }
+
+  /// O link inteiro, ou só o fragmento, mais o código -> a turma.
+  factory Roster.openLink(String linkOrFragment, String code) =>
+      Roster.fromJsonString(openSealed(fragmentOf(linkOrFragment), code));
+
+  /// O pacote dentro de um link `...#t=<pacote>`, ou o próprio texto.
+  static String fragmentOf(String linkOrFragment) {
+    final text = linkOrFragment.trim();
+    final hash = text.indexOf('#');
+    final fragment = hash >= 0 ? text.substring(hash + 1) : text;
+    const prefix = '$packageFragmentKey=';
+    return fragment.startsWith(prefix)
+        ? fragment.substring(prefix.length)
+        : fragment;
+  }
 }
+
+/// Código da turma como digitado: sem hífen nem espaço, em maiúsculas.
+String normalizeClassCode(String code) =>
+    code.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
+
+Uint8List _unb64(String text) => base64Url.decode(base64Url.normalize(text));
+
+String _hex(List<int> bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
 /// Confere o PIN contra `pbkdf2-sha256$iterações$sal$chave` (hex).
 ///

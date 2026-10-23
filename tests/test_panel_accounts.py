@@ -175,17 +175,6 @@ class TestStudentsDialog:
         dialog.delete_student(student_id)
         assert dialog.table.rowCount() == 0
 
-    def test_export_roster(self, app, store, teacher, tmp_path):
-        dialog = StudentsDialog(store, teacher)
-        dialog.create_class("5º A")
-        dialog.new_name.setText("Ana Luiza Souza")
-        pin = dialog.add_student()
-        path = dialog.export_roster(tmp_path / "turma.json")
-        roster = json.loads(path.read_text(encoding="utf-8"))
-        [entry] = roster["students"]
-        assert entry["display_name"] == "Ana S."
-        assert auth.verify_secret(pin, entry["pin_hash"])
-
 
 class TestPanelWithDatabase:
     @pytest.fixture
@@ -250,60 +239,69 @@ class TestDescribeImport:
         assert describe_import(ImportReport(imported=["a.json"])).count("\n") == 0
 
 
-class TestActivityDialog:
-    from datetime import UTC as _UTC
-    from datetime import datetime as _datetime
+class TestHomeworkDialog:
+    from datetime import date as _date
 
-    START = _datetime(2026, 10, 13, 10, 0, tzinfo=_UTC)
-
-    @pytest.fixture
-    def clock(self):
-        class Clock:
-            now = TestActivityDialog.START
-
-            def __call__(self):
-                return self.now
-
-        return Clock()
+    TODAY = _date(2026, 10, 20)
 
     @pytest.fixture
-    def dialog(self, app, store, teacher, clock):
-        from eyelearn.panel.activity import ActivityDialog
-
+    def classroom(self, store, teacher):
         classroom = store.create_class(teacher, "5º A")
-        return ActivityDialog(store, teacher, classroom.id, "5º A", clock=clock)
+        store.add_student(teacher, classroom.id, "Ana Souza", pin="2580")
+        store.add_student(teacher, classroom.id, "Bruno Lima", pin="9031")
+        return classroom
 
-    def test_opening_shows_the_qr(self, dialog):
+    @pytest.fixture
+    def dialog(self, app, store, teacher, classroom):
+        from eyelearn.panel.activity import HomeworkDialog
+
+        dialog = HomeworkDialog(store, teacher, classroom.id, "5º A", today=self.TODAY)
+        dialog.app_url.setText("https://exemplo.org/app/")
+        return dialog
+
+    def test_creates_activity_from_the_form(self, dialog, store, teacher, classroom):
+        from datetime import timedelta
+
         dialog.task_box.setCurrentIndex(0)
-        activity = dialog.open_activity()
+        dialog.due_edit.setDate(dialog.due_edit.date().addDays(3))
+        activity = dialog.add_activity()
         assert activity.task == "syllables"
-        assert dialog.pages.currentIndex() == 1
-        assert not dialog.qr_label.pixmap().isNull()
-        assert dialog.countdown.text() == "Entrada fecha em 15:00"
+        assert activity.due_at.date() == self.TODAY + timedelta(days=10)
+        assert dialog.table.rowCount() == 1
+        assert dialog.table.item(0, 3).text() == "0 de 2"
 
-    def test_countdown_and_expiry(self, dialog, clock):
-        from datetime import timedelta
+    def test_past_due_is_reported_in_the_form(self, dialog):
+        dialog.due_edit.setDate(dialog.due_edit.date().addDays(-30))
+        assert dialog.add_activity() is None
+        assert "passou" in dialog.error.text()
 
-        dialog.open_activity()
-        clock.now = self.START + timedelta(minutes=14, seconds=1)
-        dialog.tick()
-        assert dialog.countdown.text() == "Entrada fecha em 00:59"
-        clock.now = self.START + timedelta(minutes=15)
-        dialog.tick()
-        assert dialog.countdown.text() == "Entrada fechada"
-        assert dialog.qr_label.pixmap().isNull()
+    def test_link_opens_with_the_code_shown(self, dialog):
+        from eyelearn.storage import package
 
-    def test_closing_the_window_closes_the_entry(self, dialog, store, clock):
-        from datetime import timedelta
+        dialog.add_activity()
+        link = dialog.make_link()
+        assert link.startswith("https://exemplo.org/app/#t=")
+        opened = package.open_sealed(link.split("#t=")[1], dialog.code_label.text())
+        assert [s[1] for s in opened["students"]] == ["Ana S.", "Bruno L."]
+        assert len(opened["activities"]) == 1
 
-        dialog.open_activity()
-        clock.now = self.START + timedelta(minutes=3)
-        dialog.close_entry()
-        stored = store.connection.execute("SELECT expira_em FROM atividades").fetchone()[0]
-        assert stored == clock.now.isoformat()
+    def test_message_for_parents_has_the_link_but_not_the_code(self, dialog):
+        from eyelearn.panel.activity import parents_message
 
-    def test_qr_image_is_not_degenerate(self, app):
-        from eyelearn.panel.activity import qr_pixmap
+        link = dialog.make_link()
+        message = parents_message("5º A", link)
+        assert link in message
+        assert dialog.code_label.text() not in message
 
-        pixmap = qr_pixmap("EYELEARN1.abc.DEF.text.1.x", size=300)
-        assert pixmap.width() == 300
+    def test_copy_goes_to_the_clipboard(self, dialog, app):
+        dialog.copy_message()
+        assert "#t=" in QApplication.clipboard().text()
+
+    def test_delivered_count(self, dialog, store, teacher, classroom):
+        activity = dialog.add_activity()
+        code = store.students(teacher, classroom.id)[0].code
+        store.import_session(
+            teacher, make_payload(code=code) | {"activity_code": activity.code}
+        )
+        dialog.refresh()
+        assert dialog.table.item(0, 3).text() == "1 de 2"

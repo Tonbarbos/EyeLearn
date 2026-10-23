@@ -7,6 +7,7 @@ escola e servir a mais de um professor, e um não pode ver os alunos do outro.
 
 from __future__ import annotations
 
+import base64
 import functools
 import json
 import os
@@ -14,12 +15,12 @@ import secrets
 import sqlite3
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
 from eyelearn.session import Session, session_from_dict
-from eyelearn.storage import auth, db, ticket
+from eyelearn.storage import auth, db, package
 from eyelearn.storage.schema import MIGRATIONS
 
 #: Alfabeto do código do aluno: sem 0/O, 1/I/L, que se confundem quando o
@@ -27,15 +28,22 @@ from eyelearn.storage.schema import MIGRATIONS
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
 
-ROSTER_FORMAT = "eyelearn-turma"
-#: Versão 2 acrescenta o identificador e a chave da turma, que o celular usa
-#: para conferir o QR da atividade. Uma lista da versão 1 não tem com que
-#: conferir, e o celular a recusa.
-ROSTER_FORMAT_VERSION = 2
+#: As tarefas de leitura, com os nomes do aplicativo.
+TASKS = ("syllables", "text", "pseudotext")
 
-#: Quanto tempo a entrada fica aberta, por padrão. Curto de propósito: uma foto
-#: do QR mandada para fora da sala só funciona dentro deste prazo.
-DEFAULT_ACTIVITY_MINUTES = 15
+ROSTER_FORMAT = "eyelearn-turma"
+#: Versão 3: o pacote vai cifrado no link, com as atividades de casa, em
+#: formato compacto. As versões 1 e 2 eram arquivos importados no celular e
+#: carregavam a chave do QR; nenhuma das duas existe mais.
+ROSTER_FORMAT_VERSION = 3
+
+#: Atividades encerradas há até este número de dias continuam no pacote, para
+#: o aplicativo mostrar "prazo encerrado" em vez de a atividade sumir.
+RECENTLY_CLOSED_DAYS = 14
+
+#: Endereço do aplicativo web, onde o link da turma abre. O painel deixa
+#: trocar; este é o do GitHub Pages do repositório.
+DEFAULT_APP_URL = "https://tonbarbos.github.io/EyeLearn/"
 
 
 @functools.cache
@@ -112,15 +120,23 @@ class ImportReport:
 
 @dataclass(frozen=True)
 class Activity:
-    """Atividade aberta: o que o painel mostra enquanto a entrada está aberta."""
+    """Dever de casa: uma tarefa de leitura, com dia de início e prazo."""
 
     id: int
     class_id: int
+    #: Vai no pacote e volta na sessão: é o que liga a gravação à atividade.
     code: str
     task: str
-    opened_at: datetime
-    expires_at: datetime
-    qr_text: str
+    opens_on: date
+    #: Fim do prazo: 23:59:59 do último dia, no fuso do computador do professor.
+    due_at: datetime
+
+
+@dataclass(frozen=True)
+class ShareLink:
+    url: str
+    #: Código da turma, formatado para ditar (``K7Q2-XP4M``).
+    access_code: str
 
 
 class ActivityMismatchError(ValueError):
@@ -431,13 +447,16 @@ class Store:
             raise NotFoundError(code)
         return _student(row)
 
-    # -- lista da turma para o celular ---------------------------------------
+    # -- pacote da turma para as famílias ------------------------------------
 
-    def roster(self, teacher: Teacher, class_id: int) -> dict[str, Any]:
-        """A lista que o celular usa para o login do aluno.
+    def class_package(self, teacher: Teacher, class_id: int,
+                      now: datetime | None = None) -> dict[str, Any]:
+        """O que o aplicativo precisa para o dever de casa, em forma compacta.
 
-        Leva nome de exibição, código e hash do PIN -- nada mais. Data de
-        nascimento e nome completo ficam no computador.
+        Por aluno: código, nome de exibição e o hash do PIN desmontado em sal e
+        chave (base64url), para o link ficar curto. Nada de nome completo nem
+        data de nascimento. Por atividade: código, tarefa, dia de início e
+        prazo -- as abertas e as encerradas há pouco.
         """
         classroom = self._own_class(teacher, class_id)
         students = self.students(teacher, class_id)
@@ -447,75 +466,150 @@ class Store:
             ).fetchall()
         )
         names = display_names([s.full_name for s in students])
-        uid, key = self._class_secret(class_id)
+
+        entries, iterations = [], set()
+        for student, name in zip(students, names, strict=True):
+            scheme, rounds, salt_hex, key_hex = hashes[student.id].split("$")
+            if scheme != auth.PIN_SCHEME:
+                raise ValueError(f"PIN de {student.code} em esquema desconhecido")
+            iterations.add(int(rounds))
+            entries.append([student.code, name, _b64(salt_hex), _b64(key_hex)])
+        if len(iterations) > 1:
+            raise ValueError("PINs com contagens de iteração diferentes; gere-os de novo")
+
+        now = now or datetime.now(UTC)
+        recent = now - timedelta(days=RECENTLY_CLOSED_DAYS)
+        activities = [
+            [a.code, a.task, a.opens_on.isoformat(), a.due_at.isoformat()]
+            for a in self.activities(teacher, class_id)
+            if a.due_at >= recent
+        ]
+
         return {
             "format": ROSTER_FORMAT,
             "format_version": ROSTER_FORMAT_VERSION,
             "class_name": classroom.name,
-            "class_uid": uid,
-            # Confere a assinatura do QR da atividade. Quem tem esta lista
-            # consegue fabricar QR desta turma -- daí ela ir só para os
-            # aparelhos da turma, como o próprio PIN.
-            "activity_key": key,
-            "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            "students": sorted(
-                (
-                    {"code": s.code, "display_name": name, "pin_hash": hashes[s.id]}
-                    for s, name in zip(students, names, strict=True)
-                ),
-                key=lambda entry: entry["display_name"].casefold(),
-            ),
+            "class_uid": self._class_uid(class_id),
+            "exported_at": now.astimezone(UTC).isoformat(timespec="seconds"),
+            "pin_iterations": iterations.pop() if iterations else auth.PIN_ITERATIONS,
+            "students": sorted(entries, key=lambda entry: entry[1].casefold()),
+            "activities": activities,
         }
 
-    # -- atividades ----------------------------------------------------------
+    def share_link(self, teacher: Teacher, class_id: int,
+                   base_url: str = DEFAULT_APP_URL) -> ShareLink:
+        """Link e código para mandar às famílias.
 
-    def open_activity(
+        O link muda a cada pedido (sal e nonce novos) e precisa ser mandado de
+        novo quando a turma ou as atividades mudam; o código fica o mesmo.
+        """
+        code = self.access_code(teacher, class_id)
+        sealed = package.seal(self.class_package(teacher, class_id), code)
+        return ShareLink(package.link(base_url, sealed), package.format_code(code))
+
+    def access_code(self, teacher: Teacher, class_id: int) -> str:
+        """Código de acesso da turma, criado na primeira vez que é pedido."""
+        self._own_class(teacher, class_id)
+        row = self.connection.execute(
+            "SELECT codigo_acesso FROM turmas WHERE id = ?", (class_id,)
+        ).fetchone()
+        if row["codigo_acesso"]:
+            return row["codigo_acesso"]
+        return self.new_access_code(teacher, class_id)
+
+    def new_access_code(self, teacher: Teacher, class_id: int) -> str:
+        """Troca o código. Links já enviados param de abrir com o novo."""
+        self._own_class(teacher, class_id)
+        code = "".join(
+            secrets.choice(CODE_ALPHABET) for _ in range(package.ACCESS_CODE_LENGTH)
+        )
+        with self.connection:
+            self.connection.execute(
+                "UPDATE turmas SET codigo_acesso = ? WHERE id = ?", (code, class_id)
+            )
+        return code
+
+    # -- atividades (dever de casa) -------------------------------------------
+
+    def create_activity(
         self,
         teacher: Teacher,
         class_id: int,
         task: str,
-        minutes: int = DEFAULT_ACTIVITY_MINUTES,
-        now: datetime | None = None,
+        due: date,
+        opens: date | None = None,
+        today: date | None = None,
     ) -> Activity:
-        """Abre a entrada na atividade e devolve o QR para projetar."""
+        """Cria o dever de casa: disponível de ``opens`` até o fim de ``due``."""
         self._own_class(teacher, class_id)
-        if not 1 <= minutes <= 120:
-            raise ValueError("a entrada fica aberta entre 1 e 120 minutos")
-        now = (now or datetime.now(UTC)).replace(microsecond=0)
-        expires = now + timedelta(minutes=minutes)
-        uid, key = self._class_secret(class_id)
+        if task not in TASKS:
+            raise ValueError(f"tarefa desconhecida: {task!r}")
+        today = today or date.today()
+        opens = opens or today
+        if due < today:
+            raise ValueError("o prazo já passou")
+        if due < opens:
+            raise ValueError("o prazo termina antes de a atividade começar")
+        due_at = datetime.combine(due, time(23, 59, 59)).astimezone()
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
-        qr_text = ticket.issue(uid, key, code, task, expires)
         with self.connection:
             cursor = self.connection.execute(
                 "INSERT INTO atividades (turma_id, codigo, tarefa, aberta_em, expira_em)"
                 " VALUES (?, ?, ?, ?, ?)",
-                (class_id, code, task, now.isoformat(), expires.isoformat()),
+                (class_id, code, task, opens.isoformat(), due_at.isoformat()),
             )
-        return Activity(cursor.lastrowid, class_id, code, task, now, expires, qr_text)
+        return Activity(cursor.lastrowid, class_id, code, task, opens, due_at)
 
-    def close_activity(self, teacher: Teacher, activity: Activity,
-                       now: datetime | None = None) -> None:
-        """Encerra a entrada antes do prazo.
+    def activities(self, teacher: Teacher, class_id: int) -> list[Activity]:
+        """As atividades da turma, pelo prazo."""
+        self._own_class(teacher, class_id)
+        rows = self.connection.execute(
+            "SELECT id, turma_id, codigo, tarefa, aberta_em, expira_em FROM atividades"
+            " WHERE turma_id = ? ORDER BY expira_em, id",
+            (class_id,),
+        )
+        return [
+            Activity(
+                r["id"], r["turma_id"], r["codigo"], r["tarefa"],
+                # Atividades da versão 2 guardavam instante, não dia.
+                date.fromisoformat(r["aberta_em"][:10]),
+                datetime.fromisoformat(r["expira_em"]),
+            )
+            for r in rows
+        ]
 
-        Quem já entrou continua: o celular confere o QR na entrada, não durante
-        a leitura. O registro passa a dizer quando a entrada fechou de fato.
-        """
-        self._own_class(teacher, activity.class_id)
-        now = (now or datetime.now(UTC)).replace(microsecond=0)
+    def delete_activity(self, teacher: Teacher, activity_id: int) -> None:
+        """Apaga a atividade. Sessões já importadas ficam, sem o vínculo."""
+        row = self.connection.execute(
+            "SELECT turma_id FROM atividades WHERE id = ?", (activity_id,)
+        ).fetchone()
+        if row is None:
+            raise NotFoundError(f"atividade {activity_id}")
+        self._own_class(teacher, row["turma_id"])
         with self.connection:
-            self.connection.execute(
-                "UPDATE atividades SET expira_em = min(expira_em, ?) WHERE id = ?",
-                (now.isoformat(), activity.id),
-            )
+            self.connection.execute("DELETE FROM atividades WHERE id = ?", (activity_id,))
+
+    def completed_activity_codes(self, teacher: Teacher, class_id: int) -> dict[str, set[str]]:
+        """Quem já entregou o quê: código da atividade -> códigos dos alunos."""
+        self._own_class(teacher, class_id)
+        rows = self.connection.execute(
+            "SELECT at.codigo AS atividade, al.codigo AS aluno FROM sessoes s"
+            " JOIN atividades at ON at.id = s.atividade_id"
+            " JOIN alunos al ON al.id = s.aluno_id WHERE at.turma_id = ?",
+            (class_id,),
+        )
+        done: dict[str, set[str]] = {}
+        for row in rows:
+            done.setdefault(row["atividade"], set()).add(row["aluno"])
+        return done
 
     # -- auxiliares ----------------------------------------------------------
 
-    def _class_secret(self, class_id: int) -> tuple[str, str]:
+    def _class_uid(self, class_id: int) -> str:
         row = self.connection.execute(
-            "SELECT uid, chave FROM turmas WHERE id = ?", (class_id,)
+            "SELECT uid FROM turmas WHERE id = ?", (class_id,)
         ).fetchone()
-        return row["uid"], row["chave"]
+        return row["uid"]
 
     def _own_class(self, teacher: Teacher, class_id: int) -> Classroom:
         row = self.connection.execute(
@@ -548,3 +642,7 @@ def _iso_date(value: date | str | None) -> str | None:
     if isinstance(value, date):
         return value.isoformat()
     return date.fromisoformat(value).isoformat()
+
+
+def _b64(hex_text: str) -> str:
+    return base64.urlsafe_b64encode(bytes.fromhex(hex_text)).rstrip(b"=").decode("ascii")

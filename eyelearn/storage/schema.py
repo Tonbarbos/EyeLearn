@@ -85,7 +85,8 @@ MIGRATIONS: tuple[str, ...] = (
     CREATE INDEX sessoes_por_aluno ON sessoes (aluno_id);
     CREATE INDEX alunos_por_turma ON alunos (turma_id);
     """,
-    # 2 -- atividade aberta pelo professor, com entrada por QR.
+    # 2 -- atividade aberta pelo professor, com entrada por QR (substituída
+    # pela versão 3; mantida porque bancos existentes já a aplicaram).
     #
     # Cada turma ganha um identificador público e uma chave secreta. As duas
     # vão para o celular na lista da turma; o QR da atividade leva o
@@ -114,5 +115,18 @@ MIGRATIONS: tuple[str, ...] = (
 
     ALTER TABLE sessoes ADD COLUMN atividade_id INTEGER
         REFERENCES atividades(id) ON DELETE SET NULL;
+    """,
+    # 3 -- dever de casa, com a turma entregue por link.
+    #
+    # Celular não entra na escola, e a entrada por QR da versão 2 deixou de
+    # existir. A atividade passa a ser dever de casa: aberta_em é o dia em
+    # que fica disponível, expira_em é o fim do prazo. O código de acesso é o
+    # que o professor manda às famílias junto com o link; dele sai a chave que
+    # cifra o pacote da turma (eyelearn/storage/package.py). É gerado pelo
+    # programa na primeira vez que o link é pedido, porque o SQLite não tem
+    # como sortear do alfabeto sem ambiguidade. A coluna chave, da versão 2,
+    # fica sem uso.
+    """
+    ALTER TABLE turmas ADD COLUMN codigo_acesso TEXT;
     """,
 )

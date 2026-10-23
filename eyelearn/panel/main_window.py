@@ -38,7 +38,7 @@ from PyQt6.QtWidgets import (
 
 from eyelearn.panel import charts, theme
 from eyelearn.panel.accounts import StudentsDialog
-from eyelearn.panel.activity import ActivityDialog
+from eyelearn.panel.activity import HomeworkDialog
 from eyelearn.session import (
     ClassComparison,
     Session,
@@ -164,7 +164,7 @@ class PanelWindow(QWidget):
             self._class_box.currentIndexChanged.connect(lambda _: self.load_class())
             layout.addWidget(self._class_box)
 
-            self._activity_button = QPushButton("Abrir atividade…")
+            self._activity_button = QPushButton("Atividades e link…")
             self._activity_button.clicked.connect(self._open_activity)
             layout.addWidget(self._activity_button)
 
@@ -281,7 +281,7 @@ class PanelWindow(QWidget):
         QMessageBox.information(self, "Importação", describe_import(report))
 
     def _open_activity(self) -> None:
-        ActivityDialog(
+        HomeworkDialog(
             self._store,
             self._teacher,
             self._class_box.currentData(),
@@ -379,11 +379,12 @@ class PanelWindow(QWidget):
         if self._class_box.count() == 0:
             return (
                 "Nenhuma turma ainda. Em “Alunos e turmas”, crie a turma, "
-                "cadastre os alunos e exporte a lista para o celular."
+                "cadastre os alunos; depois, em “Atividades e link”, crie o dever "
+                "de casa e mande o link às famílias."
             )
         return (
             "Nenhuma sessão desta turma ainda. Depois da atividade, importe os "
-            "arquivos que o celular compartilhou em “Importar sessões”."
+            "arquivos que as famílias mandaram em “Importar sessões”."
         )
 
     def _clear_detail(self) -> None:
@@ -495,7 +496,7 @@ def describe_import(report: ImportReport) -> str:
         codes = ", ".join(sorted(set(report.unknown_codes)))
         lines.append(
             f"{len(report.unknown_codes)} de código que não é de aluno seu ({codes}): "
-            "confira se a lista no celular é desta turma."
+            "confira se o link enviado às famílias é desta turma."
         )
     if report.wrong_activity:
         lines.append(

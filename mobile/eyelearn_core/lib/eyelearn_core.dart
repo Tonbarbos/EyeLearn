@@ -17,7 +17,6 @@
 /// treino as extraiu.
 library;
 
-export 'src/activity.dart';
 export 'src/calibration.dart';
 export 'src/events.dart';
 export 'src/face_landmarks.dart';

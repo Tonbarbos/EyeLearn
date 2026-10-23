@@ -1,33 +1,40 @@
-"""Abrir a atividade e projetar o QR de entrada.
+"""Dever de casa e o link da turma.
 
-O professor escolhe a tarefa e por quanto tempo a entrada fica aberta; a tela
-mostra o QR grande, para projetar, e a contagem regressiva. Fechar a janela
-encerra a entrada: quem já entrou continua, quem não entrou precisa de um QR
-novo.
+Celular não entra na escola, então a leitura é feita em casa. Nesta janela o
+professor cria as atividades (tarefa, início e prazo), vê quem já entregou, e
+pega o link e o código que vão para as famílias.
+
+O link leva a turma cifrada (ver :mod:`eyelearn.storage.package`) e muda a cada
+vez que as atividades ou os alunos mudam: é preciso mandar de novo. O código
+fica o mesmo até o professor pedir outro.
 """
 
 from __future__ import annotations
 
-import io
-from datetime import UTC, datetime
+from datetime import date, timedelta
 
-import segno
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QDate, QSettings, Qt
 from PyQt6.QtWidgets import (
+    QApplication,
     QComboBox,
+    QDateEdit,
     QDialog,
+    QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QLineEdit,
+    QMessageBox,
     QPushButton,
-    QSpinBox,
-    QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from eyelearn.panel import theme
-from eyelearn.storage.store import DEFAULT_ACTIVITY_MINUTES, Activity, Store, Teacher
+from eyelearn.storage import package
+from eyelearn.storage.store import DEFAULT_APP_URL, Activity, Store, Teacher
 
 TASK_LABELS = {
     "syllables": "Sílabas",
@@ -35,25 +42,31 @@ TASK_LABELS = {
     "pseudotext": "Pseudotexto",
 }
 
-
-def qr_pixmap(text: str, size: int = 420) -> QPixmap:
-    """O QR como imagem, com a margem branca que os leitores precisam."""
-    buffer = io.BytesIO()
-    segno.make(text, error="m").save(buffer, kind="png", scale=12, border=4)
-    pixmap = QPixmap()
-    pixmap.loadFromData(buffer.getvalue(), "PNG")
-    return pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
-                         Qt.TransformationMode.FastTransformation)
+#: Onde o painel guarda o endereço do aplicativo web, se o professor trocar.
+SETTINGS = ("EyeLearn", "painel")
 
 
-def remaining_text(expires_at: datetime, now: datetime) -> str:
-    seconds = int((expires_at - now).total_seconds())
-    if seconds <= 0:
-        return "Entrada fechada"
-    return f"Entrada fecha em {seconds // 60:02d}:{seconds % 60:02d}"
+def _qdate(value: date) -> QDate:
+    return QDate(value.year, value.month, value.day)
 
 
-class ActivityDialog(QDialog):
+def _pydate(value: QDate) -> date:
+    return date(value.year(), value.month(), value.day())
+
+
+def parents_message(class_name: str, link: str) -> str:
+    """Texto para o grupo das famílias. O código vai separado, de propósito."""
+    return (
+        f"Atividade de leitura do EyeLearn ({class_name}).\n\n"
+        "Abra o link no celular, digite o código da turma que a professora "
+        "mandou à parte, e deixe a criança escolher o nome e digitar o PIN. "
+        "São poucos minutos, num lugar com boa luz, com o celular apoiado na "
+        "mesa. A câmera é usada só no aparelho: nenhuma imagem sai dele.\n\n"
+        f"{link}"
+    )
+
+
+class HomeworkDialog(QDialog):
     def __init__(
         self,
         store: Store,
@@ -61,137 +74,239 @@ class ActivityDialog(QDialog):
         class_id: int,
         class_name: str,
         parent: QWidget | None = None,
-        clock=lambda: datetime.now(UTC),
+        today: date | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Atividade")
+        self.setWindowTitle("Atividades e link da turma")
         self.setStyleSheet(theme.stylesheet())
+        self.resize(820, 640)
         self.store = store
         self.teacher = teacher
         self.class_id = class_id
-        self.clock = clock
-        self.activity: Activity | None = None
+        self.class_name = class_name
+        self.today = today or date.today()
+        self.settings = QSettings(*SETTINGS)
+        self.last_link: str | None = None
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(14)
+        root.setContentsMargins(22, 20, 22, 20)
+        root.setSpacing(12)
+
         title = QLabel(class_name)
         title.setProperty("role", "title")
         root.addWidget(title)
 
-        self.pages = QStackedWidget()
-        self.pages.addWidget(self._build_setup())
-        self.pages.addWidget(self._build_qr())
-        root.addWidget(self.pages)
+        root.addWidget(self._build_table(), stretch=1)
+        root.addWidget(self._build_form())
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.tick)
-
-    def _build_setup(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
-
-        intro = QLabel(
-            "Os alunos entram lendo o QR que vai aparecer aqui. Quem consegue "
-            "ler a sua tela está na sala; fora dela, o aplicativo não abre a "
-            "atividade."
+        self.error = QLabel("")
+        self.error.setWordWrap(True)
+        self.error.setStyleSheet(
+            f"color: #A32317; background: {theme.CORAL_SOFT};"
+            "border-radius: 10px; padding: 8px 12px;"
         )
-        intro.setProperty("role", "muted")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
+        self.error.hide()
+        root.addWidget(self.error)
 
-        row = QHBoxLayout()
+        root.addWidget(self._build_link())
+        self.refresh()
+
+    # -- construção ---------------------------------------------------------
+
+    def _build_table(self) -> QWidget:
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Tarefa", "Início", "Prazo", "Entregues"])
+        self.table.verticalHeader().hide()
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        return self.table
+
+    def _build_form(self) -> QWidget:
+        card = QFrame()
+        card.setProperty("card", "true")
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+
         self.task_box = QComboBox()
         for task, label in TASK_LABELS.items():
             self.task_box.addItem(label, task)
         self.task_box.setCurrentIndex(1)
-        row.addWidget(self.task_box, stretch=1)
+        layout.addWidget(self.task_box, stretch=1)
 
-        self.minutes = QSpinBox()
-        self.minutes.setRange(1, 120)
-        self.minutes.setValue(DEFAULT_ACTIVITY_MINUTES)
-        self.minutes.setSuffix(" min de entrada")
-        row.addWidget(self.minutes)
-        layout.addLayout(row)
+        self.opens_edit = QDateEdit(_qdate(self.today))
+        self.opens_edit.setCalendarPopup(True)
+        self.opens_edit.setDisplayFormat("dd/MM/yyyy")
+        self.due_edit = QDateEdit(_qdate(self.today + timedelta(days=7)))
+        self.due_edit.setCalendarPopup(True)
+        self.due_edit.setDisplayFormat("dd/MM/yyyy")
+        layout.addWidget(QLabel("de"))
+        layout.addWidget(self.opens_edit)
+        layout.addWidget(QLabel("até"))
+        layout.addWidget(self.due_edit)
 
-        start = QPushButton("Abrir entrada")
-        start.clicked.connect(self.open_activity)
-        layout.addWidget(start)
-        return page
+        add = QPushButton("Criar atividade")
+        add.clicked.connect(self.add_activity)
+        layout.addWidget(add)
 
-    def _build_qr(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
+        remove = QPushButton("Apagar")
+        remove.setProperty("variant", "ghost")
+        remove.clicked.connect(self.ask_delete_activity)
+        layout.addWidget(remove)
+        return card
+
+    def _build_link(self) -> QWidget:
+        card = QFrame()
+        card.setProperty("card", "true")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
-        self.task_label = QLabel("")
-        self.task_label.setProperty("role", "title")
-        self.task_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.task_label)
+        label = QLabel("LINK DA TURMA")
+        label.setProperty("role", "label")
+        layout.addWidget(label)
 
-        self.qr_label = QLabel()
-        self.qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.qr_label.setStyleSheet("background: #FFFFFF; border-radius: 18px;")
-        layout.addWidget(self.qr_label)
+        code_row = QHBoxLayout()
+        code_row.addWidget(QLabel("Código da turma:"))
+        self.code_label = QLabel("")
+        self.code_label.setStyleSheet(
+            "font-size: 22px; font-weight: 700; letter-spacing: 2px;"
+        )
+        self.code_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        code_row.addWidget(self.code_label)
+        code_row.addStretch()
+        copy_code = QPushButton("Copiar código")
+        copy_code.setProperty("variant", "ghost")
+        copy_code.clicked.connect(lambda: self.copy(self.code_label.text()))
+        code_row.addWidget(copy_code)
+        new_code = QPushButton("Trocar código")
+        new_code.setProperty("variant", "ghost")
+        new_code.clicked.connect(self.ask_new_code)
+        code_row.addWidget(new_code)
+        layout.addLayout(code_row)
 
-        self.countdown = QLabel("")
-        self.countdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.countdown.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {theme.INK};")
-        layout.addWidget(self.countdown)
+        url_row = QHBoxLayout()
+        url_row.addWidget(QLabel("Endereço do aplicativo:"))
+        self.app_url = QLineEdit(str(self.settings.value("app_url", DEFAULT_APP_URL)))
+        self.app_url.editingFinished.connect(
+            lambda: self.settings.setValue("app_url", self.app_url.text().strip())
+        )
+        url_row.addWidget(self.app_url, stretch=1)
+        layout.addLayout(url_row)
+
+        buttons = QHBoxLayout()
+        copy_message = QPushButton("Copiar mensagem com o link")
+        copy_message.clicked.connect(self.copy_message)
+        buttons.addWidget(copy_message)
+        copy_link = QPushButton("Copiar só o link")
+        copy_link.setProperty("variant", "ghost")
+        copy_link.clicked.connect(lambda: self.copy(self.make_link()))
+        buttons.addWidget(copy_link)
+        buttons.addStretch()
+        layout.addLayout(buttons)
 
         hint = QLabel(
-            "No celular: “Ler QR da atividade”. Quando todos tiverem entrado, "
-            "encerre a entrada — quem já entrou continua a atividade."
+            "Mande a mensagem com o link no grupo das famílias e o código à "
+            "parte (bilhete na agenda, ou outra mensagem). Sem o código o link "
+            "não abre. Sempre que criar ou apagar atividade, ou mudar alunos, "
+            "mande o link de novo; o código continua o mesmo."
         )
         hint.setProperty("role", "muted")
         hint.setWordWrap(True)
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(hint)
+        return card
 
-        close = QPushButton("Encerrar entrada")
-        close.clicked.connect(self.close)
-        layout.addWidget(close)
-        return page
+    # -- estado -------------------------------------------------------------
 
-    def open_activity(self) -> Activity:
-        self.activity = self.store.open_activity(
-            self.teacher,
-            self.class_id,
-            self.task_box.currentData(),
-            minutes=self.minutes.value(),
-            now=self.clock(),
+    def refresh(self) -> None:
+        self.activities = self.store.activities(self.teacher, self.class_id)
+        done = self.store.completed_activity_codes(self.teacher, self.class_id)
+        total = len(self.store.students(self.teacher, self.class_id))
+        self.table.setRowCount(0)
+        for activity in self.activities:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            task = QTableWidgetItem(TASK_LABELS.get(activity.task, activity.task))
+            task.setData(Qt.ItemDataRole.UserRole, activity.id)
+            self.table.setItem(row, 0, task)
+            opens = activity.opens_on.strftime("%d/%m/%Y")
+            self.table.setItem(row, 1, QTableWidgetItem(opens))
+            closed = activity.due_at.date() < self.today
+            due = activity.due_at.strftime("%d/%m/%Y") + (" (encerrada)" if closed else "")
+            self.table.setItem(row, 2, QTableWidgetItem(due))
+            self.table.setItem(
+                row, 3, QTableWidgetItem(f"{len(done.get(activity.code, ()))} de {total}")
+            )
+        self.code_label.setText(
+            package.format_code(self.store.access_code(self.teacher, self.class_id))
         )
-        self.task_label.setText(TASK_LABELS[self.activity.task])
-        self.qr_label.setPixmap(qr_pixmap(self.activity.qr_text))
-        self.pages.setCurrentIndex(1)
-        self.tick()
-        self.timer.start(1000)
-        return self.activity
 
-    def tick(self) -> None:
-        if self.activity is None:
+    def base_url(self) -> str:
+        return self.app_url.text().strip() or DEFAULT_APP_URL
+
+    def selected_activity(self) -> int | None:
+        rows = self.table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        return self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole)
+
+    # -- ações --------------------------------------------------------------
+
+    def add_activity(self) -> Activity | None:
+        self.error.hide()
+        try:
+            activity = self.store.create_activity(
+                self.teacher,
+                self.class_id,
+                self.task_box.currentData(),
+                due=_pydate(self.due_edit.date()),
+                opens=_pydate(self.opens_edit.date()),
+                today=self.today,
+            )
+        except ValueError as error:
+            self.error.setText(str(error).capitalize() + ".")
+            self.error.show()
+            return None
+        self.refresh()
+        return activity
+
+    def ask_delete_activity(self) -> None:
+        activity_id = self.selected_activity()
+        if activity_id is None:
             return
-        now = self.clock()
-        self.countdown.setText(remaining_text(self.activity.expires_at, now))
-        if now >= self.activity.expires_at:
-            # Vencido, o QR não serve para nada; tirá-lo da tela evita que
-            # alguém tente lê-lo e ache que o aplicativo falhou.
-            self.timer.stop()
-            self.qr_label.clear()
-            self.qr_label.setText("Abra uma nova entrada para quem ainda não entrou.")
+        answer = QMessageBox.question(
+            self,
+            "Apagar atividade",
+            "Apagar esta atividade? Ela some do aplicativo quando as famílias "
+            "abrirem o link novo; sessões já importadas continuam no painel.",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.store.delete_activity(self.teacher, activity_id)
+            self.refresh()
 
-    def close_entry(self) -> None:
-        if self.activity is not None and self.clock() < self.activity.expires_at:
-            self.store.close_activity(self.teacher, self.activity, now=self.clock())
-        self.timer.stop()
+    def ask_new_code(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Trocar código",
+            "Trocar o código da turma? Os links já enviados deixam de abrir, e "
+            "todas as famílias vão precisar do link e do código novos.",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.store.new_access_code(self.teacher, self.class_id)
+            self.refresh()
 
-    def closeEvent(self, event) -> None:  # noqa: N802 -- nome do Qt
-        self.close_entry()
-        super().closeEvent(event)
+    def make_link(self) -> str:
+        shared = self.store.share_link(self.teacher, self.class_id, self.base_url())
+        self.last_link = shared.url
+        return shared.url
 
-    def reject(self) -> None:
-        self.close_entry()
-        super().reject()
+    def copy_message(self) -> None:
+        self.copy(parents_message(self.class_name, self.make_link()))
+
+    def copy(self, text: str) -> None:
+        QApplication.clipboard().setText(text)
