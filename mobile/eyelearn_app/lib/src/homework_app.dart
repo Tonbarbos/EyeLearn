@@ -24,6 +24,8 @@ import 'activity/passages.dart';
 import 'gaze/gaze_source.dart';
 import 'session/class_storage.dart';
 import 'session/session_export.dart';
+import 'teacher/teacher_controller.dart';
+import 'teacher/teacher_screens.dart';
 import 'ui/calibration_screen.dart';
 import 'ui/finished_screen.dart';
 import 'ui/reading_screen.dart';
@@ -61,6 +63,9 @@ class HomeworkEnvironment {
   final Widget? joinHint;
   final Widget? pickerHint;
 
+  /// O painel do professor, no mesmo site; `null` esconde a entrada.
+  final TeacherEnvironment? teacher;
+
   const HomeworkEnvironment({
     required this.models,
     required this.gaze,
@@ -73,8 +78,12 @@ class HomeworkEnvironment {
     this.onReadingStarted,
     this.joinHint,
     this.pickerHint,
+    this.teacher,
   });
 }
+
+/// Fragmento do endereço que abre direto o painel: `.../#professor`.
+const teacherFragment = 'professor';
 
 class HomeworkApp extends StatelessWidget {
   final HomeworkEnvironment environment;
@@ -112,6 +121,7 @@ class _HomeworkHomeState extends State<HomeworkHome> {
 
   Roster? _roster;
   bool _loading = true;
+  bool _teacherFirst = false;
   String? _pendingLink;
 
   HomeworkEnvironment get env => widget.environment;
@@ -123,8 +133,17 @@ class _HomeworkHomeState extends State<HomeworkHome> {
   }
 
   Future<void> _restore() async {
-    final saved = await env.storage.load();
     final link = env.initialLink;
+    if (env.teacher != null &&
+        link != null &&
+        Uri.tryParse(link)?.fragment == teacherFragment) {
+      setState(() {
+        _teacherFirst = true;
+        _loading = false;
+      });
+      return;
+    }
+    final saved = await env.storage.load();
     final hasLink = link != null && Roster.fragmentOf(link).isNotEmpty;
     Roster? roster;
 
@@ -189,17 +208,26 @@ class _HomeworkHomeState extends State<HomeworkHome> {
     );
   }
 
+  void _openTeacher() => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TeacherGate(environment: env.teacher!),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    if (_teacherFirst) return TeacherGate(environment: env.teacher!);
+    final teacher = env.teacher == null ? null : _openTeacher;
     final roster = _roster;
     if (roster == null) {
       return JoinClassScreen(
         initialLink: _pendingLink,
         onJoined: _joined,
         hint: env.joinHint,
+        onTeacher: teacher,
       );
     }
     return ChooseStudentScreen(
@@ -208,6 +236,7 @@ class _HomeworkHomeState extends State<HomeworkHome> {
       onLeaveClass: _leaveClass,
       trainedOnSyntheticData: anyTrainedOnSyntheticData(env.models),
       hint: env.pickerHint,
+      onTeacher: teacher,
     );
   }
 }
@@ -255,12 +284,14 @@ class JoinClassScreen extends StatefulWidget {
   final String? initialLink;
   final Future<void> Function(String packageJson, String code) onJoined;
   final Widget? hint;
+  final VoidCallback? onTeacher;
 
   const JoinClassScreen({
     super.key,
     required this.initialLink,
     required this.onJoined,
     this.hint,
+    this.onTeacher,
   });
 
   @override
@@ -377,6 +408,14 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
                       'gravada nem enviada. Ao final, você escolhe enviar ao '
                       'professor um arquivo com as medidas da leitura.',
                 ),
+                if (widget.onTeacher != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: widget.onTeacher,
+                    icon: const Icon(Icons.school_outlined),
+                    label: const Text('Sou professor'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -402,6 +441,7 @@ class ChooseStudentScreen extends StatelessWidget {
   final VoidCallback onLeaveClass;
   final bool trainedOnSyntheticData;
   final Widget? hint;
+  final VoidCallback? onTeacher;
 
   const ChooseStudentScreen({
     super.key,
@@ -410,6 +450,7 @@ class ChooseStudentScreen extends StatelessWidget {
     required this.onLeaveClass,
     this.trainedOnSyntheticData = false,
     this.hint,
+    this.onTeacher,
   });
 
   @override
@@ -464,6 +505,11 @@ class ChooseStudentScreen extends StatelessWidget {
                   onPressed: onLeaveClass,
                   child: const Text('Sair desta turma'),
                 ),
+                if (onTeacher != null)
+                  TextButton(
+                    onPressed: onTeacher,
+                    child: const Text('Sou professor'),
+                  ),
               ],
             ),
           ),
