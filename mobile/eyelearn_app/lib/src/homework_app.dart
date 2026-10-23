@@ -1,0 +1,820 @@
+/// O aplicativo do aluno, como dever de casa.
+///
+/// Celular não entra na escola: a criança faz a atividade em casa. O fluxo é
+///
+/// 1. o responsável abre o link que o professor mandou no grupo e digita o
+///    código da turma, uma vez (ver `Roster.openLink`);
+/// 2. a criança toca no próprio nome e digita o PIN;
+/// 3. aparecem as atividades dela: a fazer, feitas, a começar, encerradas;
+/// 4. ela calibra seguindo uma bolinha e lê o texto;
+/// 5. o responsável envia o arquivo de sessão ao professor.
+///
+/// A criança nunca vê resultado: a tela final diz que ela terminou, e é tudo.
+///
+/// O mesmo fluxo serve ao Android, ao navegador e à pré-visualização: o que
+/// muda entre eles (de onde vem o olhar, onde a turma é guardada, como o
+/// arquivo é enviado, que horas são) chega em [HomeworkEnvironment].
+library;
+
+import 'package:eyelearn_core/eyelearn_core.dart';
+import 'package:flutter/material.dart';
+
+import 'activity/models.dart';
+import 'activity/passages.dart';
+import 'gaze/gaze_source.dart';
+import 'session/class_storage.dart';
+import 'session/session_export.dart';
+import 'ui/calibration_screen.dart';
+import 'ui/finished_screen.dart';
+import 'ui/reading_screen.dart';
+import 'ui/student_login.dart';
+import 'ui/theme.dart';
+import 'ui/widgets.dart';
+
+class HomeworkEnvironment {
+  /// Um modelo por tarefa; ver `loadModels`.
+  final Map<String, ModelArtifact> models;
+
+  /// Cria a origem do olhar para uma atividade.
+  final GazeSource Function() gaze;
+
+  final ClassStorage storage;
+
+  final DateTime Function() clock;
+
+  /// O link com que o aplicativo foi aberto, no navegador. `null` no Android.
+  final String? initialLink;
+
+  /// Pede a permissão de câmera antes de ligar a captura; `null` quando quem
+  /// pergunta é o navegador. Devolve se foi concedida.
+  final Future<bool> Function()? requestCamera;
+
+  /// Envia o arquivo; `null` esconde o botão (pré-visualização).
+  final Future<void> Function(ExportedSession)? share;
+
+  /// Ganchos da pré-visualização, que conduz um olhar sintético.
+  final void Function(GazeSource, CalibrationTarget)? onTargetShown;
+  final void Function(GazeSource)? onReadingStarted;
+
+  /// Aviso extra nas telas de entrada (a pré-visualização mostra código e
+  /// PINs da turma fictícia).
+  final Widget? joinHint;
+  final Widget? pickerHint;
+
+  const HomeworkEnvironment({
+    required this.models,
+    required this.gaze,
+    required this.storage,
+    required this.clock,
+    this.initialLink,
+    this.requestCamera,
+    this.share,
+    this.onTargetShown,
+    this.onReadingStarted,
+    this.joinHint,
+    this.pickerHint,
+  });
+}
+
+class HomeworkApp extends StatelessWidget {
+  final HomeworkEnvironment environment;
+  final String title;
+
+  const HomeworkApp({
+    super.key,
+    required this.environment,
+    this.title = 'EyeLearn',
+  });
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        title: title,
+        debugShowCheckedModeBanner: false,
+        theme: buildAppTheme(),
+        home: HomeworkHome(environment: environment),
+      );
+}
+
+/// Decide a primeira tela: entrar na turma ou escolher o aluno.
+class HomeworkHome extends StatefulWidget {
+  final HomeworkEnvironment environment;
+
+  const HomeworkHome({super.key, required this.environment});
+
+  @override
+  State<HomeworkHome> createState() => _HomeworkHomeState();
+}
+
+class _HomeworkHomeState extends State<HomeworkHome> {
+  /// Vive enquanto o aplicativo estiver aberto: voltar da tela do PIN e tocar
+  /// no nome de novo não zera a contagem de tentativas.
+  final _limiter = PinAttemptLimiter();
+
+  Roster? _roster;
+  bool _loading = true;
+  String? _pendingLink;
+
+  HomeworkEnvironment get env => widget.environment;
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  Future<void> _restore() async {
+    final saved = await env.storage.load();
+    final link = env.initialLink;
+    final hasLink = link != null && Roster.fragmentOf(link).isNotEmpty;
+    Roster? roster;
+
+    if (saved != null) {
+      roster = Roster.fromJsonString(saved.packageJson);
+      if (hasLink) {
+        // Link novo da mesma turma (o professor criou atividade): abre com o
+        // código guardado, sem perguntar de novo.
+        try {
+          final json = Roster.openSealed(Roster.fragmentOf(link), saved.code);
+          roster = Roster.fromJsonString(json);
+          await env.storage.save(packageJson: json, code: saved.code);
+        } on FormatException {
+          // Outra turma ou código trocado: pede o código.
+          roster = null;
+          _pendingLink = link;
+        }
+      }
+    } else if (hasLink) {
+      _pendingLink = link;
+    }
+
+    if (mounted) {
+      setState(() {
+        _roster = roster;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _joined(String packageJson, String code) async {
+    await env.storage.save(packageJson: packageJson, code: code);
+    setState(() {
+      _roster = Roster.fromJsonString(packageJson);
+      _pendingLink = null;
+    });
+  }
+
+  Future<void> _leaveClass() async {
+    await env.storage.clear();
+    setState(() => _roster = null);
+  }
+
+  Future<void> _studentSelected(RosterStudent student) async {
+    final roster = _roster!;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PinScreen(
+          student: student,
+          limiter: _limiter,
+          onAccepted: () => Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (context) => StudentActivitiesScreen(
+                environment: env,
+                roster: roster,
+                student: student,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final roster = _roster;
+    if (roster == null) {
+      return JoinClassScreen(
+        initialLink: _pendingLink,
+        onJoined: _joined,
+        hint: env.joinHint,
+      );
+    }
+    return ChooseStudentScreen(
+      roster: roster,
+      onSelected: _studentSelected,
+      onLeaveClass: _leaveClass,
+      trainedOnSyntheticData: anyTrainedOnSyntheticData(env.models),
+      hint: env.pickerHint,
+    );
+  }
+}
+
+/// O cabeçalho de marca.
+class BrandHero extends StatelessWidget {
+  final String subtitle;
+
+  const BrandHero({super.key, this.subtitle = 'Vamos ler juntos?'});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Shapes.cardRadius + 4),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Palette.brand, Palette.brandDeep],
+          ),
+          boxShadow: Shapes.buttonShadow,
+        ),
+        child: Column(
+          children: [
+            const EyeMascot(size: 84, iris: Palette.amber),
+            const SizedBox(height: 14),
+            Text(
+              'EyeLearn',
+              style:
+                  AppType.display.copyWith(color: Colors.white, fontSize: 30),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: AppType.subtitle.copyWith(color: Colors.white70),
+            ),
+          ],
+        ),
+      );
+}
+
+/// Entrar na turma: link (quando não veio pela barra de endereço) e código.
+class JoinClassScreen extends StatefulWidget {
+  final String? initialLink;
+  final Future<void> Function(String packageJson, String code) onJoined;
+  final Widget? hint;
+
+  const JoinClassScreen({
+    super.key,
+    required this.initialLink,
+    required this.onJoined,
+    this.hint,
+  });
+
+  @override
+  State<JoinClassScreen> createState() => _JoinClassScreenState();
+}
+
+class _JoinClassScreenState extends State<JoinClassScreen> {
+  late final _link = TextEditingController(text: widget.initialLink ?? '');
+  final _code = TextEditingController();
+  String? _error;
+  bool _opening = false;
+
+  bool get _hasLink => (widget.initialLink ?? '').isNotEmpty;
+
+  @override
+  void dispose() {
+    _link.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _error = null;
+      _opening = true;
+    });
+    // Um quadro para o indicador aparecer: a derivação da chave leva um
+    // instante no celular.
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    try {
+      final json = Roster.openSealed(Roster.fragmentOf(_link.text), _code.text);
+      Roster.fromJsonString(json); // confere o formato antes de guardar
+      await widget.onJoined(json, _code.text);
+    } on FormatException catch (error) {
+      setState(() => _error = _sentence(error.message));
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  static String _sentence(String text) =>
+      '${text[0].toUpperCase()}${text.substring(1)}.';
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const BrandHero(subtitle: 'Atividade de leitura em casa'),
+                const SizedBox(height: 22),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('Entrar na turma', style: AppType.title),
+                      const SizedBox(height: 6),
+                      Text(
+                        _hasLink
+                            ? 'Digite o código da turma que a professora mandou.'
+                            : 'Cole o link que a professora mandou no grupo e '
+                                'digite o código da turma.',
+                        style: AppType.body.copyWith(color: Palette.inkMuted),
+                      ),
+                      const SizedBox(height: 16),
+                      if (!_hasLink) ...[
+                        TextField(
+                          controller: _link,
+                          decoration: _decoration('Link da turma', Icons.link),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      TextField(
+                        controller: _code,
+                        textCapitalization: TextCapitalization.characters,
+                        autocorrect: false,
+                        onSubmitted: (_) => _submit(),
+                        style: AppType.title.copyWith(letterSpacing: 3),
+                        decoration: _decoration(
+                          'Código da turma',
+                          Icons.key_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  NoticeCard(
+                    icon: Icons.error_outline_rounded,
+                    tint: const Color(0xFFA32317),
+                    background: Palette.coralSoft,
+                    text: _error!,
+                  ),
+                ],
+                if (widget.hint != null) ...[
+                  const SizedBox(height: 12),
+                  widget.hint!,
+                ],
+                const SizedBox(height: 20),
+                PrimaryButton(
+                  label: _opening ? 'Abrindo…' : 'Entrar',
+                  icon: Icons.login_rounded,
+                  onPressed: _opening ? null : _submit,
+                ),
+                const SizedBox(height: 16),
+                const NoticeCard(
+                  icon: Icons.lock_outline_rounded,
+                  tint: Color(0xFF3A2FB0),
+                  background: Palette.brandSoft,
+                  text: 'A câmera é usada só neste aparelho: nenhuma imagem é '
+                      'gravada nem enviada. Ao final, você escolhe enviar ao '
+                      'professor um arquivo com as medidas da leitura.',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  InputDecoration _decoration(String label, IconData icon) => InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        filled: true,
+        fillColor: Palette.background,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(Shapes.chipRadius + 2),
+          borderSide: BorderSide.none,
+        ),
+      );
+}
+
+/// Quem vai ler: os nomes da turma.
+class ChooseStudentScreen extends StatelessWidget {
+  final Roster roster;
+  final ValueChanged<RosterStudent> onSelected;
+  final VoidCallback onLeaveClass;
+  final bool trainedOnSyntheticData;
+  final Widget? hint;
+
+  const ChooseStudentScreen({
+    super.key,
+    required this.roster,
+    required this.onSelected,
+    required this.onLeaveClass,
+    this.trainedOnSyntheticData = false,
+    this.hint,
+  });
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const BrandHero(),
+                const SizedBox(height: 22),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(roster.className.toUpperCase(),
+                          style: AppType.label),
+                      const SizedBox(height: 6),
+                      const Text('Quem vai ler hoje?', style: AppType.title),
+                      Text(
+                        'Toque no seu nome',
+                        style: AppType.body.copyWith(color: Palette.inkMuted),
+                      ),
+                      const SizedBox(height: 14),
+                      StudentPicker(roster: roster, onSelected: onSelected),
+                    ],
+                  ),
+                ),
+                if (hint != null) ...[const SizedBox(height: 12), hint!],
+                const SizedBox(height: 14),
+                const NoticeCard(
+                  icon: Icons.info_outline_rounded,
+                  tint: Color(0xFF3A2FB0),
+                  background: Palette.brandSoft,
+                  text: 'Este aplicativo não faz diagnóstico. Ele descreve o '
+                      'padrão de leitura e sugere adaptações ao professor. '
+                      'Avaliação clínica é de profissional habilitado.',
+                ),
+                if (trainedOnSyntheticData) ...[
+                  const SizedBox(height: 10),
+                  const NoticeCard(
+                    icon: Icons.science_outlined,
+                    tint: Color(0xFFA32317),
+                    background: Palette.coralSoft,
+                    text: 'O modelo embarcado foi treinado em dados sintéticos '
+                        'e não aprendeu nada sobre leitura.',
+                  ),
+                ],
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: onLeaveClass,
+                  child: const Text('Sair desta turma'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+/// As atividades de um aluno, e o que fazer com cada uma.
+class StudentActivitiesScreen extends StatefulWidget {
+  final HomeworkEnvironment environment;
+  final Roster roster;
+  final RosterStudent student;
+
+  const StudentActivitiesScreen({
+    super.key,
+    required this.environment,
+    required this.roster,
+    required this.student,
+  });
+
+  @override
+  State<StudentActivitiesScreen> createState() =>
+      _StudentActivitiesScreenState();
+}
+
+class _StudentActivitiesScreenState extends State<StudentActivitiesScreen> {
+  Set<String> _done = {};
+  String? _error;
+
+  HomeworkEnvironment get env => widget.environment;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    final done = await env.storage.doneFor(widget.student.code);
+    if (mounted) setState(() => _done = done);
+  }
+
+  /// Ordem: a fazer (prazo mais perto primeiro), a começar, feitas,
+  /// encerradas.
+  List<(HomeworkActivity, HomeworkStatus)> get _items {
+    final now = env.clock();
+    final items = [
+      for (final activity in widget.roster.activities)
+        (activity, activity.statusAt(now, done: _done.contains(activity.code))),
+    ];
+    const order = [
+      HomeworkStatus.pending,
+      HomeworkStatus.upcoming,
+      HomeworkStatus.done,
+      HomeworkStatus.closed,
+    ];
+    items.sort((a, b) {
+      final byStatus = order.indexOf(a.$2).compareTo(order.indexOf(b.$2));
+      return byStatus != 0 ? byStatus : a.$1.dueAt.compareTo(b.$1.dueAt);
+    });
+    return items;
+  }
+
+  Future<void> _start(HomeworkActivity activity) async {
+    setState(() => _error = null);
+    final model = env.models[activity.task];
+    if (model == null) {
+      setState(() => _error = 'Atividade de um tipo que este aplicativo não '
+          'conhece. Atualize a página.');
+      return;
+    }
+    final ask = env.requestCamera;
+    if (ask != null && !await ask()) {
+      setState(() =>
+          _error = 'Sem acesso à câmera não é possível acompanhar o olhar.');
+      return;
+    }
+    if (!mounted) return;
+
+    final gaze = env.gaze();
+    final passage = passageById(activity.task);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => CalibrationScreen(
+          channel: gaze,
+          onTargetShown: env.onTargetShown == null
+              ? null
+              : (target) => env.onTargetShown!(gaze, target),
+          onCalibrated: (calibration) => Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (context) => _ReadingRun(
+                environment: env,
+                gaze: gaze,
+                calibration: calibration,
+                passage: passage,
+                model: model,
+                student: widget.student,
+                activity: activity,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await gaze.stop();
+    await _reload();
+  }
+
+  static String _date(DateTime value) {
+    final local = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.day)}/${two(local.month)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _items;
+    final pending =
+        items.where((item) => item.$2 == HomeworkStatus.pending).length;
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          tooltip: 'Trocar de aluno',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  InitialAvatar(name: widget.student.displayName, size: 56),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Oi, ${widget.student.displayName.split(' ').first}!',
+                          style: AppType.display.copyWith(fontSize: 26),
+                        ),
+                        Text(
+                          pending == 0
+                              ? 'Nenhuma atividade para fazer agora.'
+                              : pending == 1
+                                  ? 'Você tem 1 atividade para fazer.'
+                                  : 'Você tem $pending atividades para fazer.',
+                          style: AppType.subtitle,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              if (items.isEmpty)
+                const AppCard(
+                  child: Text(
+                    'A professora ainda não passou nenhuma atividade.',
+                    style: AppType.body,
+                  ),
+                ),
+              for (final (activity, status) in items) ...[
+                HomeworkCard(
+                  activity: activity,
+                  status: status,
+                  date: _date,
+                  onStart: () => _start(activity),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (_error != null)
+                NoticeCard(
+                  icon: Icons.error_outline_rounded,
+                  tint: const Color(0xFFA32317),
+                  background: Palette.coralSoft,
+                  text: _error!,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Uma atividade na lista do aluno.
+class HomeworkCard extends StatelessWidget {
+  final HomeworkActivity activity;
+  final HomeworkStatus status;
+  final String Function(DateTime) date;
+  final VoidCallback onStart;
+
+  const HomeworkCard({
+    super.key,
+    required this.activity,
+    required this.status,
+    required this.date,
+    required this.onStart,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final passage = passageById(activity.task);
+    final (label, colour, background, icon) = switch (status) {
+      HomeworkStatus.pending => (
+          'Até ${date(activity.dueAt)}',
+          Palette.brandDeep,
+          Palette.brandSoft,
+          Icons.menu_book_rounded,
+        ),
+      HomeworkStatus.done => (
+          'Feita',
+          const Color(0xFF0E7A54),
+          Palette.greenSoft,
+          Icons.check_circle_rounded,
+        ),
+      HomeworkStatus.upcoming => (
+          'Começa em ${date(activity.opensOn)}',
+          Palette.inkMuted,
+          Palette.background,
+          Icons.schedule_rounded,
+        ),
+      HomeworkStatus.closed => (
+          'Prazo encerrado',
+          Palette.inkMuted,
+          Palette.background,
+          Icons.lock_clock_rounded,
+        ),
+    };
+    final active = status == HomeworkStatus.pending;
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration:
+                    BoxDecoration(color: background, shape: BoxShape.circle),
+                child: Icon(icon, color: colour),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      passage.title,
+                      style: AppType.title.copyWith(
+                        color: active ? Palette.ink : Palette.inkMuted,
+                      ),
+                    ),
+                    Text(
+                      label,
+                      style: AppType.body.copyWith(
+                        color: colour,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (active) ...[
+            const SizedBox(height: 14),
+            PrimaryButton(
+              label: 'Fazer agora',
+              icon: Icons.play_arrow_rounded,
+              onPressed: onStart,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Liga a leitura à exportação.
+class _ReadingRun extends StatelessWidget {
+  final HomeworkEnvironment environment;
+  final GazeSource gaze;
+  final GazeCalibration calibration;
+  final Passage passage;
+  final ModelArtifact model;
+  final RosterStudent student;
+  final HomeworkActivity activity;
+
+  const _ReadingRun({
+    required this.environment,
+    required this.gaze,
+    required this.calibration,
+    required this.passage,
+    required this.model,
+    required this.student,
+    required this.activity,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final startedAt = environment.clock();
+
+    return ReadingScreen(
+      channel: gaze,
+      calibration: calibration,
+      passage: passage,
+      onStarted: environment.onReadingStarted == null
+          ? null
+          : () => environment.onReadingStarted!(gaze),
+      onFinished: (trace, quality) async {
+        final analysis = analyse(trace, model.preprocessing);
+        final exported = exportSession(
+          participantCode: student.code,
+          activityCode: activity.code,
+          task: passage.id,
+          startedAt: startedAt,
+          trace: trace,
+          quality: quality,
+          features: analysis.features,
+          artifact: model,
+        );
+        // Conta como feita só se a captura serviu: uma gravação ruim fica
+        // pendente, e a tela final sugere repetir.
+        if (exported.session.hasUsableQuality()) {
+          await environment.storage.markDone(student.code, activity.code);
+        }
+        if (!context.mounted) return;
+        final share = environment.share;
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (context) => FinishedScreen(
+              session: exported.session,
+              onShare: share == null ? null : () => share(exported),
+              doneLabel: 'Voltar às atividades',
+              onDone: () => Navigator.of(context).pop(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}

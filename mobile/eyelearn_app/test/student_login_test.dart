@@ -6,10 +6,10 @@ import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// A lista fictícia da pré-visualização, gerada pelo Python.
-final _demo = jsonDecode(File('assets/demo_roster.json').readAsStringSync())
+/// A turma fictícia da pré-visualização, gerada pelo Python.
+final _demo = jsonDecode(File('assets/demo_class.json').readAsStringSync())
     as Map<String, dynamic>;
-final roster = Roster.fromJson(_demo['roster'] as Map<String, dynamic>);
+final roster = Roster.fromJson(_demo['expected'] as Map<String, dynamic>);
 final pins = (_demo['pins_for_tests'] as Map).cast<String, String>();
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
@@ -138,49 +138,6 @@ void main() {
       for (final digit in pin.substring(0, 2).split('')) {
         expect(find.text(digit), findsOneWidget);
       }
-    });
-  });
-
-  group('ActivityCard', () {
-    testWidgets('sem atividade, pede o QR', (tester) async {
-      var scans = 0;
-      await tester.pumpWidget(
-        _host(
-          SingleChildScrollView(
-            child: ActivityCard(
-              className: roster.className,
-              ticket: null,
-              onScan: () => scans++,
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('Ler QR da atividade'));
-      expect(scans, 1);
-    });
-
-    testWidgets('com atividade, mostra a tarefa do professor e o prazo',
-        (tester) async {
-      final expires = DateTime.utc(2026, 10, 13, 10, 15);
-      final text = ActivityTicket.issue(
-        roster: roster,
-        activityCode: 'TESTE123',
-        task: 'pseudotext',
-        expiresAt: expires,
-      );
-      final ticket = ActivityTicket.verify(text, roster, expires);
-      await tester.pumpWidget(
-        _host(
-          ActivityCard(
-            className: roster.className,
-            ticket: ticket,
-            onScan: () {},
-          ),
-        ),
-      );
-      expect(find.text('Palavras inventadas'), findsOneWidget);
-      expect(find.textContaining('Entrada aberta até'), findsOneWidget);
-      expect(find.text('Ler QR da atividade'), findsNothing);
     });
   });
 }

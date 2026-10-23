@@ -112,7 +112,8 @@ class Session {
   /// explicação levaria o professor a repetir a atividade sem saber por quê.
   bool hasUsableQuality({
     double minValidRatio = 0.75,
-    double minSamplingRateHz = 20.0,
+    // Igual a MIN_SAMPLING_RATE_HZ em eyelearn/session.py; ver a nota lá.
+    double minSamplingRateHz = 15.0,
   }) =>
       validSampleRatio >= minValidRatio && samplingRateHz >= minSamplingRateHz;
 

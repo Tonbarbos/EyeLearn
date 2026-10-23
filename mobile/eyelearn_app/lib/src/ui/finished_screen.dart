@@ -27,7 +27,17 @@ class FinishedScreen extends StatelessWidget {
   /// pré-visualização de `main_demo.dart` faz.
   final Future<void> Function()? onShare;
 
-  const FinishedScreen({super.key, required this.session, this.onShare});
+  /// Botão de saída. Sem [onDone], volta ao início.
+  final String doneLabel;
+  final VoidCallback? onDone;
+
+  const FinishedScreen({
+    super.key,
+    required this.session,
+    this.onShare,
+    this.doneLabel = 'Nova atividade',
+    this.onDone,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +73,8 @@ class FinishedScreen extends StatelessWidget {
                     session: session,
                     usable: usable,
                     onShare: onShare,
+                    doneLabel: doneLabel,
+                    onDone: onDone,
                   ),
                 ],
               ),
@@ -148,10 +160,15 @@ class _AdultSection extends StatelessWidget {
   final bool usable;
   final Future<void> Function()? onShare;
 
+  final String doneLabel;
+  final VoidCallback? onDone;
+
   const _AdultSection({
     required this.session,
     required this.usable,
     required this.onShare,
+    required this.doneLabel,
+    required this.onDone,
   });
 
   @override
@@ -224,9 +241,10 @@ class _AdultSection extends StatelessWidget {
               const SizedBox(height: 10),
             ],
             SecondaryButton(
-              label: 'Nova atividade',
-              onPressed: () =>
-                  Navigator.of(context).popUntil((route) => route.isFirst),
+              label: doneLabel,
+              onPressed: onDone ??
+                  () =>
+                      Navigator.of(context).popUntil((route) => route.isFirst),
             ),
           ],
         ),

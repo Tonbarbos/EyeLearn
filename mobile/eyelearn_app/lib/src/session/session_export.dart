@@ -1,32 +1,32 @@
-/// Grava e compartilha o arquivo de sessão.
+/// Monta e envia o arquivo de sessão.
 ///
-/// Substitui um servidor pela folha de compartilhamento do sistema: o professor
-/// recebe o arquivo pelo canal que preferir e o importa no painel. Nada trafega
-/// pela rede a partir do aplicativo, o que mantém verdadeiro o parágrafo de
-/// privacidade da seção 4.6 em vez de exigir reescrevê-lo.
+/// Substitui um servidor pela folha de compartilhamento: em casa, o
+/// responsável manda o arquivo ao professor pelo canal que preferir
+/// (WhatsApp, e-mail), e o professor o importa no painel. No navegador sem
+/// compartilhamento de arquivo, o arquivo é baixado.
+///
+/// O arquivo é montado na memória, sem `dart:io`, para servir ao Android e ao
+/// navegador com o mesmo código.
 library;
 
-import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:eyelearn_core/eyelearn_core.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Resultado de uma exportação.
 class ExportedSession {
-  final File file;
   final Session session;
+  final Uint8List bytes;
 
-  const ExportedSession({required this.file, required this.session});
+  const ExportedSession({required this.session, required this.bytes});
+
+  String get fileName => sessionFileName(session);
 }
 
-/// Monta a sessão, grava no diretório de documentos e devolve o arquivo.
-///
-/// O arquivo fica no diretório de documentos do aplicativo, não em área
-/// compartilhada: só o próprio aplicativo o lê, até que o adulto escolha
-/// compartilhá-lo. Em área compartilhada qualquer aplicativo do aparelho teria
-/// acesso a dado comportamental de criança.
-Future<ExportedSession> exportSession({
+/// Monta a sessão a partir da gravação.
+ExportedSession exportSession({
   required String participantCode,
   String? activityCode,
   required String task,
@@ -35,7 +35,7 @@ Future<ExportedSession> exportSession({
   required RecordingQuality quality,
   required Map<String, double> features,
   required ModelArtifact artifact,
-}) async {
+}) {
   final session = Session.fromAnalysis(
     participantCode: participantCode,
     activityCode: activityCode,
@@ -47,12 +47,10 @@ Future<ExportedSession> exportSession({
     features: features,
     artifact: artifact,
   );
-
-  final directory = await getApplicationDocumentsDirectory();
-  final file = File('${directory.path}/${sessionFileName(session)}');
-  await file.writeAsString(session.toJsonString(), flush: true);
-
-  return ExportedSession(file: file, session: session);
+  return ExportedSession(
+    session: session,
+    bytes: Uint8List.fromList(utf8.encode(session.toJsonString())),
+  );
 }
 
 /// Nome do arquivo de sessão.
@@ -71,12 +69,20 @@ String sessionFileName(Session session) {
   return 'eyelearn_${session.participantCode}_${session.task}_$stamp.json';
 }
 
-/// Abre a folha de compartilhamento do sistema com o arquivo.
+/// Abre a folha de compartilhamento com o arquivo.
 ///
 /// É ação do adulto, nunca automática: a criança termina a atividade e o
 /// aparelho não envia nada por conta própria.
 Future<void> shareSession(ExportedSession exported) async {
-  await Share.shareXFiles([
-    XFile(exported.file.path, mimeType: 'application/json'),
-  ], subject: 'Sessão EyeLearn — ${exported.session.participantCode}');
+  await Share.shareXFiles(
+    [
+      XFile.fromData(
+        exported.bytes,
+        name: exported.fileName,
+        mimeType: 'application/json',
+      ),
+    ],
+    fileNameOverrides: [exported.fileName],
+    subject: 'Sessão EyeLearn — ${exported.session.participantCode}',
+  );
 }

@@ -48,6 +48,18 @@ const List<CalibrationTarget> calibrationTargets = [
 const Duration targetSettleTime = Duration(milliseconds: 600);
 const Duration targetMeasureTime = Duration(milliseconds: 400);
 
+/// Até quanto a janela de medida se estende quando chegam poucos quadros.
+///
+/// A 30 Hz, 400 ms trazem 12 quadros e a janela nunca se estende. No
+/// navegador de um celular mais modesto o MediaPipe pode rodar a 15 Hz ou
+/// menos; aí 400 ms trazem 5 ou 6 quadros, e uma piscada bastaria para
+/// reprovar o alvo. A janela cresce até ter [minimumTargetSamples], sem
+/// passar deste limite.
+const Duration targetMeasureMaxTime = Duration(milliseconds: 1200);
+
+/// Medidas mínimas por alvo.
+const int minimumTargetSamples = 5;
+
 class CalibrationScreen extends StatefulWidget {
   /// Meia-largura da tela em graus de ângulo visual.
   static const double degreesPerHalfWidth = 14.0;
@@ -121,7 +133,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     _timer = Timer(targetSettleTime, () {
       setState(() => _measuring = true);
-      _timer = Timer(targetMeasureTime, _collectTarget);
+      final elapsed = Stopwatch()..start();
+      void check() {
+        final enough = _measurements.length >= minimumTargetSamples;
+        if (enough || elapsed.elapsed >= targetMeasureMaxTime) {
+          _collectTarget();
+        } else {
+          _timer = Timer(const Duration(milliseconds: 100), check);
+        }
+      }
+
+      _timer = Timer(targetMeasureTime, check);
     });
   }
 
@@ -140,7 +162,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     // Um alvo sem medida suficiente é repetido, não descartado: perder um alvo
     // dos cinco deixaria o mapa linear sem folga nenhuma.
-    if (_measurements.length < 5) {
+    if (_measurements.length < minimumTargetSamples) {
       setState(
         () => _message = 'Não consegui ver bem. Vamos tentar esse de novo!',
       );

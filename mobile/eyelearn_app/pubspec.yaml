@@ -13,6 +13,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Só para desligar o tratamento de endereço no navegador (ver main.dart).
+  flutter_web_plugins:
+    sdk: flutter
 
   # O núcleo de processamento e inferência, em Dart puro e já testado.
   # Caminho local, não pacote publicado: os dois evoluem juntos, e uma versão
@@ -31,10 +34,7 @@ dependencies:
   # Compartilhamento do arquivo de sessão pela folha do sistema. É o que
   # substitui um servidor: nada trafega pela rede.
   share_plus: ^10.0.2
-  path_provider: ^2.1.4
-  file_picker: ^11.0.3
-  mobile_scanner: ^7.4.2
-
+  shared_preferences: ^2.5.6
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -51,8 +51,8 @@ flutter:
     - assets/model_syllables.json
     - assets/model_text.json
     - assets/model_pseudotext.json
-    # Só a pré-visualização no navegador usa. Alunos fictícios.
-    - assets/demo_roster.json
+    # Só a pré-visualização no navegador usa. Turma fictícia.
+    - assets/demo_class.json
 
   # O Roboto vai embutido, e não deixado ao padrão da plataforma, por uma razão
   # de medida: o mesmo texto tem de ocupar a mesma largura em todo aparelho.
