@@ -15,6 +15,8 @@ import 'src/gaze/platform_gaze.dart';
 import 'src/homework_app.dart';
 import 'src/session/class_storage.dart';
 import 'src/session/session_export.dart';
+import 'src/teacher/teacher_controller.dart';
+import 'src/teacher/teacher_platform.dart';
 
 Future<void> main() async {
   // O link da turma chega no fragmento (#t=...). Lido antes de o Flutter
@@ -36,6 +38,11 @@ Future<void> main() async {
             ? null
             : () async => (await Permission.camera.request()).isGranted,
         share: shareSession,
+        teacher: TeacherEnvironment(
+          platform: createTeacherPlatform(),
+          storage: PrefsVaultStorage(),
+          clock: DateTime.now,
+        ),
       ),
     ),
   );

@@ -1,0 +1,404 @@
+{
+  "sessions": [
+    {
+      "format_version": 1,
+      "participant_code": "AAA222",
+      "task": "text",
+      "started_at": "2026-10-20T14:00:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 29.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 2.065553227397031,
+        "fixation_duration_mean": 2.787058027182535,
+        "fixation_duration_std": 2.801803627657515,
+        "fixation_duration_median": 1.1563494391910796,
+        "saccade_rate": 1.2962481607402403,
+        "saccade_amplitude_mean": 3.077577251894669,
+        "saccade_amplitude_std": 0.46933532634105696,
+        "progressive_amplitude_mean": 2.292820200520278,
+        "regression_ratio": 2.5768309210884843,
+        "regression_rate": 1.4413745770545654,
+        "peak_velocity_mean": 1.2575810670482839,
+        "line_sweep_rate": 1.2014064249657748,
+        "reading_time": 1.1256450806412017,
+        "scanpath_length": 1.8145195492550172
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    },
+    {
+      "format_version": 1,
+      "participant_code": "BBB333",
+      "task": "text",
+      "started_at": "2026-10-20T14:01:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 29.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 2.142706664071793,
+        "fixation_duration_mean": 2.754652059938587,
+        "fixation_duration_std": 2.436926317353345,
+        "fixation_duration_median": 0.9824991220869941,
+        "saccade_rate": 1.0672775858911614,
+        "saccade_amplitude_mean": 2.43621655989985,
+        "saccade_amplitude_std": 0.5427264102483247,
+        "progressive_amplitude_mean": 2.3237593546540185,
+        "regression_ratio": 2.395112554684559,
+        "regression_rate": 1.421232447884627,
+        "peak_velocity_mean": 1.2575810670482839,
+        "line_sweep_rate": 1.072078028653568,
+        "reading_time": 1.0578899627576095,
+        "scanpath_length": 1.7966982103803735
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    },
+    {
+      "format_version": 1,
+      "participant_code": "CCC444",
+      "task": "text",
+      "started_at": "2026-10-20T14:02:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 29.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 2.068797431139286,
+        "fixation_duration_mean": 3.0287080334159033,
+        "fixation_duration_std": 2.54145425596355,
+        "fixation_duration_median": 1.1401200338383035,
+        "saccade_rate": 1.09717561808892,
+        "saccade_amplitude_mean": 2.717011181887278,
+        "saccade_amplitude_std": 0.514359789252447,
+        "progressive_amplitude_mean": 2.8374877892144,
+        "regression_ratio": 2.388926547810517,
+        "regression_rate": 1.7190228098343427,
+        "peak_velocity_mean": 1.2575810670482839,
+        "line_sweep_rate": 1.1557441620012374,
+        "reading_time": 1.0768024309798387,
+        "scanpath_length": 1.44345486478063
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    },
+    {
+      "format_version": 1,
+      "participant_code": "DDD555",
+      "task": "text",
+      "started_at": "2026-10-20T14:03:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 29.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 2.258495518043244,
+        "fixation_duration_mean": 2.643829509172902,
+        "fixation_duration_std": 2.789544820654376,
+        "fixation_duration_median": 1.0917168111571327,
+        "saccade_rate": 1.289824909416639,
+        "saccade_amplitude_mean": 2.7949936420593176,
+        "saccade_amplitude_std": 0.5403275961916132,
+        "progressive_amplitude_mean": 2.285602146808166,
+        "regression_ratio": 2.448039858998967,
+        "regression_rate": 1.53937163245365,
+        "peak_velocity_mean": 1.2575810670482839,
+        "line_sweep_rate": 1.0513537122131027,
+        "reading_time": 1.2967745336405192,
+        "scanpath_length": 1.474807657626163
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    },
+    {
+      "format_version": 1,
+      "participant_code": "EEE666",
+      "task": "text",
+      "started_at": "2026-10-20T14:04:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 29.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 2.1690306592550557,
+        "fixation_duration_mean": 4.899716431183978,
+        "fixation_duration_std": 2.7129504267106452,
+        "fixation_duration_median": 1.1147491297744445,
+        "saccade_rate": 1.1122257006576544,
+        "saccade_amplitude_mean": 2.961725408060143,
+        "saccade_amplitude_std": 0.581662577813414,
+        "progressive_amplitude_mean": 2.8624395230325956,
+        "regression_ratio": 5.598581329169318,
+        "regression_rate": 1.4922301153098725,
+        "peak_velocity_mean": 1.2575810670482839,
+        "line_sweep_rate": 1.349604809610908,
+        "reading_time": 1.155025265036759,
+        "scanpath_length": 1.4581397540386036
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    },
+    {
+      "format_version": 1,
+      "participant_code": "BBB333",
+      "task": "text",
+      "started_at": "2026-10-19T09:00:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 29.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 6.188215999535003,
+        "fixation_duration_mean": 8.229103507271816,
+        "fixation_duration_std": 7.317642676838952,
+        "fixation_duration_median": 3.189053924929439,
+        "saccade_rate": 3.7512471368341904,
+        "saccade_amplitude_mean": 8.051650840471964,
+        "saccade_amplitude_std": 1.5394897842418103,
+        "progressive_amplitude_mean": 7.659213137870747,
+        "regression_ratio": 7.478020715640347,
+        "regression_rate": 5.009512146327906,
+        "peak_velocity_mean": 1.2575810670482839,
+        "line_sweep_rate": 3.5881920907557996,
+        "reading_time": 3.411521907405935,
+        "scanpath_length": 4.838072294119849
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    },
+    {
+      "format_version": 1,
+      "participant_code": "FFF777",
+      "task": "text",
+      "started_at": "2026-10-20T15:00:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 10.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 10.313693332558337,
+        "fixation_duration_mean": 13.715172512119693,
+        "fixation_duration_std": 12.19607112806492,
+        "fixation_duration_median": 5.315089874882398,
+        "saccade_rate": 6.252078561390317,
+        "saccade_amplitude_mean": 13.419418067453272,
+        "saccade_amplitude_std": 2.5658163070696838,
+        "progressive_amplitude_mean": 12.765355229784578,
+        "regression_ratio": 12.463367859400577,
+        "regression_rate": 8.34918691054651,
+        "peak_velocity_mean": 6.287905335241419,
+        "line_sweep_rate": 5.980320151259666,
+        "reading_time": 5.6858698456765575,
+        "scanpath_length": 8.063453823533083
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    },
+    {
+      "format_version": 1,
+      "participant_code": "AAA222",
+      "task": "syllables",
+      "started_at": "2026-10-20T16:00:00Z",
+      "duration_seconds": 30.0,
+      "sampling_rate_hz": 29.0,
+      "valid_sample_ratio": 0.93,
+      "features": {
+        "fixation_rate": 14.439170665581674,
+        "fixation_duration_mean": 19.20124151696757,
+        "fixation_duration_std": 17.074499579290887,
+        "fixation_duration_median": 7.441125824835358,
+        "saccade_rate": 8.752909985946445,
+        "saccade_amplitude_mean": 18.787185294434583,
+        "saccade_amplitude_std": 3.5921428298975573,
+        "progressive_amplitude_mean": 17.87149732169841,
+        "regression_ratio": 17.44871500316081,
+        "regression_rate": 11.688861674765114,
+        "peak_velocity_mean": 8.803067469337988,
+        "line_sweep_rate": 8.372448211763533,
+        "reading_time": 7.960217783947181,
+        "scanpath_length": 11.288835352946315
+      },
+      "score": 0.5,
+      "model": {
+        "score_kind": "probability",
+        "training_data": "etdd70"
+      }
+    }
+  ],
+  "expected": {
+    "task": "text",
+    "participant_codes": [
+      "AAA222",
+      "BBB333",
+      "CCC444",
+      "DDD555",
+      "EEE666"
+    ],
+    "z_scores": [
+      [
+        -1.055315856667912,
+        -0.5139496393855254,
+        1.009930219838437,
+        0.9655656639266538,
+        1.2437466486537434,
+        1.271943551207615,
+        -1.6289838907842054,
+        -0.8445623958003121,
+        -0.4004174815578363,
+        -0.7634702330419859,
+        0.0,
+        0.3311604467772646,
+        -0.19856527950264516,
+        1.274320789440844
+      ],
+      [
+        0.02506489447485546,
+        -0.5521725119962343,
+        -1.5267694445829636,
+        -1.8669811619649481,
+        -1.0584888307834706,
+        -1.6407835527200734,
+        0.35210657623499436,
+        -0.7297563229421579,
+        -0.5445980289456178,
+        -0.9526862650214284,
+        0.0,
+        -0.879743241735876,
+        -1.0002286165461967,
+        1.1696637886091776
+      ],
+      [
+        -1.0098872221575292,
+        -0.22892320165868757,
+        -0.8000704164243556,
+        0.7011396255744137,
+        -0.7578724282767051,
+        -0.3655602403027321,
+        -0.4136109938650298,
+        1.1765383298623713,
+        -0.5495061836626891,
+        1.844769265843856,
+        0.0,
+        -0.09637599708410906,
+        -0.7764605402687593,
+        -0.9047813119670262
+      ],
+      [
+        1.6464579836119597,
+        -0.6828878277411057,
+        0.9247045542985696,
+        -0.0874950864715202,
+        1.1791626421704469,
+        -0.011404414713258586,
+        0.28735391955114625,
+        -0.8713464635477589,
+        -0.5026039924658455,
+        0.157118340878925,
+        0.0,
+        -1.0737853232528523,
+        1.826199972822188,
+        -0.7206599454417173
+      ],
+      [
+        0.3936802007386509,
+        1.977933180781552,
+        0.39220508687032185,
+        0.287770958935408,
+        -0.6065480317640191,
+        0.745804656528445,
+        1.40313438886309,
+        1.2691268524278625,
+        1.9971256866319873,
+        -0.2857311086593687,
+        0.0,
+        1.7187441152955685,
+        0.14905446349541035,
+        -0.818543320641282
+      ]
+    ],
+    "class_mean": [
+      2.1409166999812816,
+      3.222792812178781,
+      2.656535889667886,
+      1.0970869072095908,
+      1.172550394958923,
+      2.7975048087602516,
+      0.5296823399693712,
+      2.5204218028458913,
+      3.0814982423503694,
+      1.5226463165074116,
+      1.2575810670482839,
+      1.1660374274889183,
+      1.1424274546111857,
+      1.5975240072161576
+    ],
+    "class_std": [
+      0.07141319075997372,
+      0.8478161119389203,
+      0.14383938131177826,
+      0.061375972857699385,
+      0.09945575806391935,
+      0.22019251001234252,
+      0.03704580135489414,
+      0.26949057104293256,
+      1.2603528679578664,
+      0.10645043635692963,
+      0.0,
+      0.10680320618315076,
+      0.08451816960155101,
+      0.1702832943140436
+    ],
+    "outliers": {
+      "AAA222": [
+        "saccade_amplitude_std"
+      ],
+      "BBB333": [
+        "fixation_duration_std",
+        "fixation_duration_median",
+        "saccade_amplitude_mean"
+      ],
+      "CCC444": [
+        "regression_rate"
+      ],
+      "DDD555": [
+        "fixation_rate",
+        "reading_time"
+      ],
+      "EEE666": [
+        "fixation_duration_mean",
+        "regression_ratio",
+        "line_sweep_rate"
+      ]
+    },
+    "suggestions": {
+      "AAA222": [],
+      "BBB333": [],
+      "CCC444": [],
+      "DDD555": [
+        "Faz mais paradas por segundo que a maioria da turma. Pode ajudar: dividir o texto em trechos menores, com pausa entre eles.",
+        "Levou mais tempo que a maioria da turma para a mesma tarefa. Pode ajudar: prever tempo adicional em leituras avaliativas."
+      ],
+      "EEE666": [
+        "Fixa o olhar em cada palavra por mais tempo que a maioria da turma. Pode ajudar: textos com fonte maior e mais espaçamento, e tempo extra em atividades de leitura.",
+        "Volta atrás no texto com mais frequência que a maioria da turma, o que costuma indicar que a decodificação está custando esforço. Pode ajudar: leitura acompanhada, com apoio na linha, e textos mais curtos por vez.",
+        "Troca de linha com dificuldade mais frequente que a maioria da turma. Pode ajudar: régua de leitura ou marcador de linha."
+      ]
+    }
+  }
+}

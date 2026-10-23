@@ -18,9 +18,11 @@
 library;
 
 export 'src/calibration.dart';
+export 'src/class_comparison.dart';
 export 'src/events.dart';
 export 'src/face_landmarks.dart';
 export 'src/features.dart';
+export 'src/kdf.dart';
 export 'src/model.dart';
 export 'src/pipeline.dart';
 export 'src/recorder.dart';
@@ -33,6 +35,8 @@ export 'src/preprocess.dart'
         splitOnGaps,
         validSampleRatio,
         velocity;
+export 'src/sealing.dart';
 export 'src/session.dart';
 export 'src/synthetic_face.dart';
+export 'src/teacher_vault.dart';
 export 'src/trace.dart';
