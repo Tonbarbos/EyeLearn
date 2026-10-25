@@ -69,6 +69,22 @@ modesto, em vez dos 30 Hz do Android:
 - o piso de qualidade da taxa de amostragem é 15 Hz, não 20: a curva de
   degradação sobre o ETDD70 mostra 82% no texto a 15 Hz com 1° de erro.
 
+## Testar o olhar
+
+Para conferir (e mostrar) que o rastreamento funciona, a tela de entrada tem
+**Testar o olhar**, que também abre direto em
+https://tonbarbos.github.io/EyeLearn/#olhar. A tela calibra como a atividade e
+depois mostra uma bolinha onde o aparelho acha que a pessoa está olhando, com
+nove números de referência e uma linha de diagnóstico: quadros por segundo,
+porcentagem de quadros com olhar válido, erro da calibração e a posição em
+graus (`lib/src/ui/gaze_test_screen.dart`). **Não grava nada e não gera
+sessão.**
+
+A bolinha **não aparece na atividade de verdade**, de propósito: quem vê o
+próprio olhar na tela passa a persegui-lo, e o percurso gravado deixaria de
+ser o da leitura. A bolinha é suavizada só na tela; o que a atividade grava é
+o olhar sem suavização.
+
 ## Os dois pacotes
 
 | Pacote | O que é | Roda sem Flutter? |
