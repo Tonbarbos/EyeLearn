@@ -28,6 +28,7 @@ import 'teacher/teacher_controller.dart';
 import 'teacher/teacher_screens.dart';
 import 'ui/calibration_screen.dart';
 import 'ui/finished_screen.dart';
+import 'ui/gaze_test_screen.dart';
 import 'ui/reading_screen.dart';
 import 'ui/student_login.dart';
 import 'ui/theme.dart';
@@ -57,6 +58,7 @@ class HomeworkEnvironment {
   /// Ganchos da pré-visualização, que conduz um olhar sintético.
   final void Function(GazeSource, CalibrationTarget)? onTargetShown;
   final void Function(GazeSource)? onReadingStarted;
+  final VoidCallback Function(GazeSource)? onGazeTestViewing;
 
   /// Aviso extra nas telas de entrada (a pré-visualização mostra código e
   /// PINs da turma fictícia).
@@ -76,6 +78,7 @@ class HomeworkEnvironment {
     this.share,
     this.onTargetShown,
     this.onReadingStarted,
+    this.onGazeTestViewing,
     this.joinHint,
     this.pickerHint,
     this.teacher,
@@ -84,6 +87,9 @@ class HomeworkEnvironment {
 
 /// Fragmento do endereço que abre direto o painel: `.../#professor`.
 const teacherFragment = 'professor';
+
+/// Fragmento que abre direto o teste do olhar: `.../#olhar`.
+const gazeTestFragment = 'olhar';
 
 class HomeworkApp extends StatelessWidget {
   final HomeworkEnvironment environment;
@@ -134,6 +140,11 @@ class _HomeworkHomeState extends State<HomeworkHome> {
 
   Future<void> _restore() async {
     final link = env.initialLink;
+    if (link != null && Uri.tryParse(link)?.fragment == gazeTestFragment) {
+      setState(() => _loading = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openGazeTest());
+      return;
+    }
     if (env.teacher != null &&
         link != null &&
         Uri.tryParse(link)?.fragment == teacherFragment) {
@@ -214,6 +225,22 @@ class _HomeworkHomeState extends State<HomeworkHome> {
         ),
       );
 
+  /// Testar o olhar: calibra e mostra a bolinha. Não grava nada.
+  Future<void> _openGazeTest() async {
+    final ask = env.requestCamera;
+    if (ask != null && !await ask()) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GazeTestScreen(
+          gaze: env.gaze,
+          onTargetShown: env.onTargetShown,
+          onViewing: env.onGazeTestViewing,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -228,6 +255,7 @@ class _HomeworkHomeState extends State<HomeworkHome> {
         onJoined: _joined,
         hint: env.joinHint,
         onTeacher: teacher,
+        onTestGaze: _openGazeTest,
       );
     }
     return ChooseStudentScreen(
@@ -237,6 +265,7 @@ class _HomeworkHomeState extends State<HomeworkHome> {
       trainedOnSyntheticData: anyTrainedOnSyntheticData(env.models),
       hint: env.pickerHint,
       onTeacher: teacher,
+      onTestGaze: _openGazeTest,
     );
   }
 }
@@ -285,6 +314,7 @@ class JoinClassScreen extends StatefulWidget {
   final Future<void> Function(String packageJson, String code) onJoined;
   final Widget? hint;
   final VoidCallback? onTeacher;
+  final VoidCallback? onTestGaze;
 
   const JoinClassScreen({
     super.key,
@@ -292,6 +322,7 @@ class JoinClassScreen extends StatefulWidget {
     required this.onJoined,
     this.hint,
     this.onTeacher,
+    this.onTestGaze,
   });
 
   @override
@@ -408,14 +439,19 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
                       'gravada nem enviada. Ao final, você escolhe enviar ao '
                       'professor um arquivo com as medidas da leitura.',
                 ),
-                if (widget.onTeacher != null) ...[
-                  const SizedBox(height: 8),
+                const SizedBox(height: 8),
+                if (widget.onTestGaze != null)
+                  TextButton.icon(
+                    onPressed: widget.onTestGaze,
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: const Text('Testar o olhar'),
+                  ),
+                if (widget.onTeacher != null)
                   TextButton.icon(
                     onPressed: widget.onTeacher,
                     icon: const Icon(Icons.school_outlined),
                     label: const Text('Sou professor'),
                   ),
-                ],
               ],
             ),
           ),
@@ -442,6 +478,7 @@ class ChooseStudentScreen extends StatelessWidget {
   final bool trainedOnSyntheticData;
   final Widget? hint;
   final VoidCallback? onTeacher;
+  final VoidCallback? onTestGaze;
 
   const ChooseStudentScreen({
     super.key,
@@ -451,6 +488,7 @@ class ChooseStudentScreen extends StatelessWidget {
     this.trainedOnSyntheticData = false,
     this.hint,
     this.onTeacher,
+    this.onTestGaze,
   });
 
   @override
@@ -505,6 +543,11 @@ class ChooseStudentScreen extends StatelessWidget {
                   onPressed: onLeaveClass,
                   child: const Text('Sair desta turma'),
                 ),
+                if (onTestGaze != null)
+                  TextButton(
+                    onPressed: onTestGaze,
+                    child: const Text('Testar o olhar'),
+                  ),
                 if (onTeacher != null)
                   TextButton(
                     onPressed: onTeacher,

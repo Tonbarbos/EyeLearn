@@ -35,6 +35,7 @@ import 'src/gaze/synthetic_gaze_source.dart';
 import 'src/homework_app.dart';
 import 'src/session/class_storage.dart';
 import 'src/ui/calibration_screen.dart';
+import 'src/ui/gaze_test_screen.dart';
 import 'src/ui/theme.dart';
 import 'src/ui/widgets.dart';
 
@@ -71,6 +72,8 @@ Future<void> main() async {
           degreesPerHalfHeight: CalibrationScreen.degreesPerHalfHeight,
         ),
         onReadingStarted: (gaze) => driveReading(gaze as SyntheticGazeSource),
+        onGazeTestViewing: (gaze) =>
+            wanderOverReferences(gaze as SyntheticGazeSource),
         joinHint: _DemoHint(
           'Pré-visualização, turma fictícia. Código da turma: '
           '${demo['code']}',
@@ -135,6 +138,24 @@ void driveReading(SyntheticGazeSource source) {
       if (line == 3) source.blink();
     }
   });
+}
+
+/// Passeia o olhar sintético pelos números do teste do olhar, um por vez,
+/// com uma piscada de vez em quando. Devolve como parar.
+VoidCallback wanderOverReferences(SyntheticGazeSource source) {
+  var index = 0;
+  final timer = Timer.periodic(const Duration(milliseconds: 1100), (_) {
+    final target = gazeReferences[index % gazeReferences.length];
+    source.lookAtFraction(
+      fractionX: target.dx,
+      fractionY: target.dy,
+      degreesPerHalfWidth: CalibrationScreen.degreesPerHalfWidth,
+      degreesPerHalfHeight: CalibrationScreen.degreesPerHalfHeight,
+    );
+    if (index % 5 == 4) source.blink();
+    index++;
+  });
+  return timer.cancel;
 }
 
 class _DemoHint extends StatelessWidget {
