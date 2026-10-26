@@ -38,6 +38,9 @@ const _aad = 'eyelearn-turma';
 /// Chave do fragmento do link: `https://.../#t=<pacote>`.
 const packageFragmentKey = 't';
 
+/// Chave do código da turma no fragmento: `...#t=<pacote>&c=<código>`.
+const packageCodeKey = 'c';
+
 class RosterStudent {
   final String code;
   final String displayName;
@@ -198,9 +201,30 @@ class Roster {
     final hash = text.indexOf('#');
     final fragment = hash >= 0 ? text.substring(hash + 1) : text;
     const prefix = '$packageFragmentKey=';
-    return fragment.startsWith(prefix)
+    final body = fragment.startsWith(prefix)
         ? fragment.substring(prefix.length)
         : fragment;
+    final amp = body.indexOf('&');
+    return amp >= 0 ? body.substring(0, amp) : body;
+  }
+
+  /// O código da turma, quando o link já o traz (`...#t=<pacote>&c=<código>`).
+  ///
+  /// O painel web põe o código no próprio link: quem abre o link entra direto,
+  /// sem digitar nada. É a troca de "link e código separados" por "o link é a
+  /// chave", como um documento compartilhado por link: quem recebe o link
+  /// encaminhado também entra. Links sem o código continuam pedindo.
+  static String? codeOf(String link) {
+    final hash = link.indexOf('#');
+    if (hash < 0) return null;
+    for (final part in link.substring(hash + 1).split('&')) {
+      if (part.startsWith('$packageCodeKey=')) {
+        final code =
+            normalizeClassCode(part.substring(packageCodeKey.length + 1));
+        return code.isEmpty ? null : code;
+      }
+    }
+    return null;
   }
 }
 

@@ -158,6 +158,28 @@ class _HomeworkHomeState extends State<HomeworkHome> {
     final hasLink = link != null && Roster.fragmentOf(link).isNotEmpty;
     Roster? roster;
 
+    // Link que já traz o código: entra direto, sem perguntar nada. A turma é
+    // a do link, mesmo que outra estivesse guardada.
+    final linkCode = hasLink ? Roster.codeOf(link) : null;
+    if (linkCode != null) {
+      try {
+        final json = Roster.openSealed(Roster.fragmentOf(link!), linkCode);
+        roster = Roster.fromJsonString(json);
+        await env.storage.save(packageJson: json, code: linkCode);
+        if (mounted) {
+          setState(() {
+            _roster = roster;
+            _loading = false;
+          });
+        }
+        return;
+      } on FormatException {
+        // Link cortado ou alterado: cai no caminho de sempre, que pede o
+        // código e explica o erro.
+        roster = null;
+      }
+    }
+
     if (saved != null) {
       roster = Roster.fromJsonString(saved.packageJson);
       if (hasLink) {
@@ -353,9 +375,10 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
     // instante no celular.
     await Future<void>.delayed(const Duration(milliseconds: 30));
     try {
-      final json = Roster.openSealed(Roster.fragmentOf(_link.text), _code.text);
+      final code = Roster.codeOf(_link.text) ?? _code.text;
+      final json = Roster.openSealed(Roster.fragmentOf(_link.text), code);
       Roster.fromJsonString(json); // confere o formato antes de guardar
-      await widget.onJoined(json, _code.text);
+      await widget.onJoined(json, code);
     } on FormatException catch (error) {
       setState(() => _error = _sentence(error.message));
     } finally {

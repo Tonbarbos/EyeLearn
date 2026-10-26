@@ -125,6 +125,10 @@ class TeacherController extends ChangeNotifier {
 
   DateTime? get lastBackup => _lastBackup;
 
+  /// Sobe a cada mudança no cofre. A tela do link usa para saber se o link
+  /// que mostra ainda é o da turma como está.
+  int revision = 0;
+
   /// Se vale lembrar o professor da cópia de segurança: nunca baixou, ou
   /// mudou alguma coisa depois da última e ela tem mais de uma semana.
   bool get backupIsStale =>
@@ -178,6 +182,7 @@ class TeacherController extends ChangeNotifier {
   /// o erro sobe para a tela.
   Future<T> change<T>(T Function(TeacherVault vault) action) async {
     final result = action(vault);
+    revision++;
     _changedSinceBackup = true;
     await _save();
     notifyListeners();
