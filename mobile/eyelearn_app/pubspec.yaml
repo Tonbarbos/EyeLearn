@@ -35,6 +35,10 @@ dependencies:
   # substitui um servidor: nada trafega pela rede.
   share_plus: ^10.0.2
   shared_preferences: ^2.5.6
+
+  # Envio da sessão à caixa de entrega (Supabase, pela API REST). Pacote da
+  # equipe do Dart; no navegador usa o fetch.
+  http: ^1.2.2
 dev_dependencies:
   flutter_test:
     sdk: flutter

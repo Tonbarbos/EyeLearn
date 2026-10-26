@@ -16,8 +16,25 @@ import 'package:flutter/material.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
+/// Em que pé está o envio automático ao professor.
+enum DeliveryState {
+  /// Enviando.
+  sending,
+
+  /// Chegou à caixa do professor.
+  sent,
+
+  /// Sem internet: fica guardado e sai sozinho na próxima vez que o
+  /// aplicativo abrir com conexão.
+  queued,
+}
+
 class FinishedScreen extends StatelessWidget {
   final Session session;
+
+  /// O envio automático; `null` quando a turma não tem caixa de entrega, e
+  /// aí o envio é pelo arquivo ([onShare]).
+  final DeliveryState? delivery;
 
   /// Ação de enviar ao professor.
   ///
@@ -34,6 +51,7 @@ class FinishedScreen extends StatelessWidget {
   const FinishedScreen({
     super.key,
     required this.session,
+    this.delivery,
     this.onShare,
     this.doneLabel = 'Nova atividade',
     this.onDone,
@@ -72,6 +90,7 @@ class FinishedScreen extends StatelessWidget {
                   _AdultSection(
                     session: session,
                     usable: usable,
+                    delivery: delivery,
                     onShare: onShare,
                     doneLabel: doneLabel,
                     onDone: onDone,
@@ -158,6 +177,7 @@ class _Confetti extends StatelessWidget {
 class _AdultSection extends StatelessWidget {
   final Session session;
   final bool usable;
+  final DeliveryState? delivery;
   final Future<void> Function()? onShare;
 
   final String doneLabel;
@@ -166,6 +186,7 @@ class _AdultSection extends StatelessWidget {
   const _AdultSection({
     required this.session,
     required this.usable,
+    required this.delivery,
     required this.onShare,
     required this.doneLabel,
     required this.onDone,
@@ -232,7 +253,10 @@ class _AdultSection extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 18),
-            if (onShare != null) ...[
+            if (delivery != null) ...[
+              _DeliveryNotice(delivery!),
+              const SizedBox(height: 10),
+            ] else if (onShare != null) ...[
               PrimaryButton(
                 label: 'Enviar ao professor',
                 icon: Icons.ios_share_rounded,
@@ -246,7 +270,52 @@ class _AdultSection extends StatelessWidget {
                   () =>
                       Navigator.of(context).popUntil((route) => route.isFirst),
             ),
+            // Com envio automático, o arquivo fica como plano B, discreto.
+            if (delivery != null && onShare != null)
+              Center(
+                child: TextButton(
+                  onPressed: onShare,
+                  child: const Text('Enviar como arquivo'),
+                ),
+              ),
           ],
         ),
       );
+}
+
+class _DeliveryNotice extends StatelessWidget {
+  final DeliveryState state;
+  const _DeliveryNotice(this.state);
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, tint, background, text) = switch (state) {
+      DeliveryState.sending => (
+          Icons.cloud_upload_outlined,
+          const Color(0xFF3A2FB0),
+          Palette.brandSoft,
+          'Enviando ao professor…',
+        ),
+      DeliveryState.sent => (
+          Icons.check_circle_outline_rounded,
+          const Color(0xFF0E6B4A),
+          Palette.greenSoft,
+          'Enviado ao professor. Não precisa fazer mais nada.',
+        ),
+      DeliveryState.queued => (
+          Icons.cloud_off_outlined,
+          const Color(0xFF8A5300),
+          Palette.amberSoft,
+          'Sem internet agora. Fica guardado aqui e vai sozinho na próxima '
+              'vez que o aplicativo abrir com internet.',
+        ),
+    };
+    return NoticeCard(
+      key: Key('delivery-${state.name}'),
+      icon: icon,
+      tint: tint,
+      background: background,
+      text: text,
+    );
+  }
 }

@@ -16,12 +16,16 @@
 /// arquivo é enviado, que horas são) chega em [HomeworkEnvironment].
 library;
 
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
 import 'activity/models.dart';
 import 'activity/passages.dart';
 import 'gaze/gaze_source.dart';
+import 'delivery/inbox.dart';
 import 'session/class_storage.dart';
 import 'session/session_export.dart';
 import 'teacher/teacher_controller.dart';
@@ -68,6 +72,13 @@ class HomeworkEnvironment {
   /// O painel do professor, no mesmo site; `null` esconde a entrada.
   final TeacherEnvironment? teacher;
 
+  /// A caixa de entrega do professor; `null` sem projeto configurado, e
+  /// aí a sessão só sai por arquivo.
+  final Inbox? inbox;
+
+  /// Onde ficam as entregas que não saíram por falta de internet.
+  final Outbox? outbox;
+
   const HomeworkEnvironment({
     required this.models,
     required this.gaze,
@@ -82,6 +93,8 @@ class HomeworkEnvironment {
     this.joinHint,
     this.pickerHint,
     this.teacher,
+    this.inbox,
+    this.outbox,
   });
 }
 
@@ -142,6 +155,10 @@ class _HomeworkHomeState extends State<HomeworkHome> {
   }
 
   Future<void> _restore() async {
+    // Entregas guardadas por falta de internet saem agora, em segundo plano.
+    final inbox = env.inbox;
+    final outbox = env.outbox;
+    if (inbox != null && outbox != null) unawaited(flushOutbox(inbox, outbox));
     final link = env.initialLink;
     if (link != null && Uri.tryParse(link)?.fragment == gazeTestFragment) {
       setState(() => _loading = false);
@@ -682,6 +699,7 @@ class _StudentActivitiesScreenState extends State<StudentActivitiesScreen> {
         builder: (context) => ActivityRunScreen(
           environment: env,
           model: model,
+          roster: widget.roster,
           student: widget.student,
           activity: activity,
         ),
@@ -885,12 +903,16 @@ class ActivityRunScreen extends StatefulWidget {
   final RosterStudent student;
   final HomeworkActivity activity;
 
+  /// A turma: dá a caixa de entrega (o uid) e a chave do professor.
+  final Roster? roster;
+
   const ActivityRunScreen({
     super.key,
     required this.environment,
     required this.model,
     required this.student,
     required this.activity,
+    this.roster,
   });
 
   @override
@@ -904,6 +926,7 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
   _RunStage _stage = _RunStage.calibrating;
   GazeCalibration? _calibration;
   ExportedSession? _exported;
+  DeliveryState? _delivery;
   late DateTime _startedAt;
 
   HomeworkEnvironment get env => widget.environment;
@@ -944,6 +967,30 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
       _exported = exported;
       _stage = _RunStage.finished;
     });
+    await _deliver(exported);
+  }
+
+  /// Envia sozinho à caixa do professor, cifrado para ele. Sem caixa ou sem
+  /// chave no link, a sessão sai pelo arquivo, como antes.
+  Future<void> _deliver(ExportedSession exported) async {
+    final inbox = env.inbox;
+    final roster = widget.roster;
+    final key = roster?.deliveryKey;
+    if (inbox == null || roster == null || key == null) return;
+    final Uint8List public;
+    try {
+      public = parseDeliveryPublicKey(key);
+    } on FormatException {
+      return;
+    }
+    setState(() => _delivery = DeliveryState.sending);
+    final blob = sealForTeacher(exported.bytes, public);
+    final sent = await deliverOrKeep(
+        inbox, env.outbox ?? MemoryOutbox(), roster.classUid, blob);
+    if (mounted) {
+      setState(
+          () => _delivery = sent ? DeliveryState.sent : DeliveryState.queued);
+    }
   }
 
   @override
@@ -966,6 +1013,7 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
           ),
         _RunStage.finished => FinishedScreen(
             session: _exported!.session,
+            delivery: _delivery,
             onShare: env.share == null ? null : () => env.share!(_exported!),
             doneLabel: 'Voltar às atividades',
             onDone: () => Navigator.of(context).pop(),

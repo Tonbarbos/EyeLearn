@@ -172,11 +172,15 @@ primeira vez, o painel pede seu nome e uma senha. Depois, numa tela só:
    famílias. Quem abre o link entra direto na turma; a criança escolhe o nome
    e digita o PIN. Se a turma mudar depois de copiado (aluno ou atividade
    novos), o painel avisa para copiar e mandar de novo.
-5. As sessões voltam como arquivos (WhatsApp, e-mail). Salve-os no
-   computador e importe todos de uma vez em **Sessões**. A lista de
-   atividades mostra quantos alunos já entregaram cada uma.
+5. **As sessões chegam sozinhas**: quando a criança termina, o aparelho
+   envia a sessão à caixa de entrega da turma, e o painel busca ao abrir a
+   turma (ou em **Sessões > Buscar entregas**). Sem internet na hora, o
+   aparelho guarda e envia na próxima vez que o aplicativo abrir. Arquivos
+   `.json` mandados à mão ainda podem ser importados.
 6. Em **Leitura da turma**, cada criança aparece comparada com a turma, por
-   característica, com as sugestões de adaptação.
+   característica, com as sugestões de adaptação. Com menos de três
+   gravações, cada sessão pode ser comparada com as crianças do ETDD70
+   (**Sessões > Comparar com o ETDD70**, ou `scripts/compare_session.py`).
 
 **Onde ficam os dados.** Não há servidor nem conta online. Tudo do professor
 fica num *cofre*: um arquivo cifrado com a senha dele (AES-256-GCM, chave
@@ -303,6 +307,32 @@ ficar no computador do professor.
 - **Flutter** e **Dart**, compilados para web, no mesmo site do aplicativo do aluno
 - **WebCrypto** (PBKDF2) e **AES-256-GCM** — o cofre do professor, cifrado com a senha dele
 - Versão anterior: **PyQt6** e **Matplotlib** (`eyelearn/panel`)
+
+### Envio automático: a caixa de entrega (Supabase)
+
+A sessão vai do celular ao painel por uma tabela no Supabase
+(`supabase/entregas.sql`), **cifrada para o professor**: o painel tem um par
+de chaves P-256 no cofre, a pública vai no link da turma, e o aparelho cifra
+cada sessão com ECDH + AES-256-GCM (`mobile/eyelearn_core/lib/src/delivery.dart`).
+A tabela guarda só a turma (o identificador público), a hora e o bloco
+cifrado; nem o Supabase nem quem tiver a chave pública do projeto lê o
+conteúdo.
+
+Para ligar (uma vez):
+
+1. Crie uma conta em https://supabase.com e um projeto (plano gratuito).
+2. No projeto, **SQL Editor > New query**: cole `supabase/entregas.sql` e
+   clique em **Run**.
+3. Em **Project Settings > API**, copie a **Project URL** e a chave
+   **anon public**.
+4. No GitHub, em **Settings > Secrets and variables > Actions > Variables**,
+   crie as variáveis `SUPABASE_URL` e `SUPABASE_ANON_KEY` com esses valores.
+5. Publique de novo (qualquer PR aprovado na `main`, ou **Actions >
+   publicar aplicativo web > Run workflow**).
+
+Sem as variáveis, o site sai sem envio automático, e a sessão vai por arquivo
+como antes. Links gerados antes do envio automático não têm a chave do
+professor: gere o link de novo no painel.
 
 ## Privacidade
 

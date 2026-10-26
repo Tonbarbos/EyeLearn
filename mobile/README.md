@@ -26,10 +26,13 @@ painel, em PyQt6, continua em `eyelearn/panel`.
 3. A criança toca no próprio nome e digita o PIN de quatro dígitos num teclado
    próprio, de teclas grandes.
 4. Aparecem as atividades dela: a fazer (com o prazo), feitas, a começar e
-   encerradas. Ela escolhe uma, calibra e lê.
-5. Ao final, o responsável envia o arquivo da sessão ao professor pelo
-   compartilhar do sistema (no navegador sem compartilhamento, o arquivo é
-   baixado). A sessão leva o código do aluno e o da atividade.
+   encerradas. Ela escolhe uma e calibra; a leitura começa sozinha depois
+   de uma contagem de 3 s.
+5. Ao final, a sessão vai sozinha para a caixa de entrega da turma,
+   cifrada para o professor (ver "Envio automático" no README principal);
+   sem internet, fica guardada e sai na próxima abertura. Sem caixa
+   configurada, o responsável envia o arquivo pelo compartilhar do sistema.
+   A sessão leva o código do aluno e o da atividade.
 
 A turma, o código e o que cada aluno já fez ficam guardados no aparelho
 (`lib/src/session/class_storage.dart`). Quando o professor cria atividade, o
