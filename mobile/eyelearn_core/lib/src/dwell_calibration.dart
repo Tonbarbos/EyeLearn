@@ -1,21 +1,29 @@
-/// Calibração por permanência: o alvo só enche se o olhar ficar nele.
+/// Calibração por tempo de olhar: cada alvo enche enquanto a pessoa olha.
 ///
-/// A calibração anterior media um intervalo fixo depois de cada alvo aparecer,
-/// olhasse a criança para ele ou não. Uma piscada, uma olhada para o lado ou
-/// uma sacada atrasada entravam na média, e o mapa saía torto.
+/// Primeira versão (outubro de 2026) exigia o olhar *parado* no alvo e, a
+/// partir do segundo alvo, *perto* dele pelo mapa provisório. No celular
+/// real nenhuma das duas funcionou: a íris medida pela câmera treme mais do
+/// que o limiar aceitava, e o mapa provisório, feito com dois ou três alvos,
+/// errava o bastante para obrigar a pessoa a olhar *ao lado* da bolinha.
 ///
-/// Aqui cada alvo funciona como o botão do Kinect, em que se segura a mão
-/// parada até ele encher: o alvo enche enquanto o olhar está **parado** (a
-/// íris quase não se mexe numa janela curta) e, depois que já há um mapa
-/// provisório, **perto do alvo**. Se o olhar sai ou o rosto some, o alvo
-/// esvazia. A medida do alvo é a média só desses quadros.
+/// Agora o alvo enche com o tempo, só enquanto o rosto e os olhos abertos
+/// estão no quadro:
 ///
-/// Desde o primeiro alvo confirmado já existe um mapa provisório, que
-/// melhora a cada alvo. É ele que desenha o cursor na tela de calibração,
-/// para a pessoa ver onde o aparelho acha que ela está olhando.
+/// 1. Ao aparecer o alvo, os primeiros [settleSeconds] são descartados: é o
+///    tempo de o olho chegar até ele.
+/// 2. Depois, cada quadro com rosto e olho aberto enche o alvo; sem rosto ou
+///    com o olho fechado, o alvo para (não esvazia).
+/// 3. A medida do alvo é a **mediana** dos quadros colhidos, não a média: uma
+///    olhada rápida para o lado ou um quadro ruim não a desloca.
+///
+/// No fim, [fit] descarta até dois alvos que destoam do resto (quem piscou
+/// ou olhou para outro lugar justo num alvo) antes de desistir da
+/// calibração.
+///
+/// O cursor provisório continua, só para a pessoa ver onde o aparelho acha
+/// que ela olha. Ele não decide mais nada.
 library;
 
-import 'dart:collection';
 import 'dart:math' as math;
 
 import 'calibration.dart';
@@ -23,14 +31,11 @@ import 'face_landmarks.dart';
 
 /// Em que pé está o alvo atual.
 enum DwellStatus {
-  /// Enchendo: olhar parado e no alvo.
+  /// Esperando o olho chegar ao alvo novo.
+  settling,
+
+  /// Enchendo.
   filling,
-
-  /// Olhar se mexendo.
-  moving,
-
-  /// Olhar parado, mas longe do alvo (pelo mapa provisório).
-  offTarget,
 
   /// Rosto fora do quadro.
   noFace,
@@ -46,54 +51,37 @@ class DwellCalibrator {
   /// Alvos em graus, a partir do centro da tela, na ordem de apresentação.
   final List<({double x, double y})> targets;
 
-  /// Quanto tempo o olhar precisa ficar no alvo para confirmá-lo.
-  final double dwellSeconds;
+  /// Tempo descartado depois que o alvo aparece.
+  final double settleSeconds;
 
-  /// Janela em que se mede se o olhar está parado.
-  final double stabilityWindowSeconds;
+  /// Tempo de olhar com rosto visível que enche o alvo.
+  final double collectSeconds;
 
-  /// Desvio padrão máximo do deslocamento da íris, na janela, para contar
-  /// como parado. Adimensional; da ordem de um grau no aparelho típico.
-  final double stabilityThreshold;
-
-  /// Distância máxima ao alvo, em graus, pelo mapa provisório.
-  ///
-  /// Generosa de propósito: o mapa provisório, com dois ou três alvos, erra
-  /// alguns graus, e uma exigência apertada travaria a calibração justo
-  /// quando a pessoa está olhando certo.
-  final double radiusDegrees;
-
-  /// Depois deste tempo no mesmo alvo sem confirmar, o raio dobra e a
-  /// exigência de estabilidade afrouxa: melhor uma medida um pouco pior que
-  /// uma criança presa num alvo. Olhar longe do alvo continua não contando.
-  final double relaxAfterSeconds;
-
-  /// Ganho usado no mapa antes de haver dois alvos, em graus por unidade de
-  /// deslocamento. Só desenha o cursor no começo; não entra em medida.
+  /// Ganho usado no cursor antes de haver dois alvos, em graus por unidade
+  /// de deslocamento. Só desenha o cursor no começo.
   final double defaultGainX;
   final double defaultGainY;
 
+  /// Quantos alvos [fit] pode descartar.
+  final int maxDiscarded;
+
   DwellCalibrator({
     required this.targets,
-    this.dwellSeconds = 1.5,
-    this.stabilityWindowSeconds = 0.3,
-    this.stabilityThreshold = 0.02,
-    this.radiusDegrees = 8.0,
-    this.relaxAfterSeconds = 6.0,
+    this.settleSeconds = 0.5,
+    this.collectSeconds = 1.2,
     this.defaultGainX = 40.0,
     this.defaultGainY = 25.0,
+    this.maxDiscarded = 2,
   }) : assert(targets.length >= 3);
 
-  final _window = ListQueue<({double t, double x, double y})>();
   final List<CalibrationSample> _samples = [];
+  final List<double> _xs = [], _ys = [];
 
   int _index = 0;
-  double _progress = 0;
-  double _sumX = 0, _sumY = 0;
-  int _count = 0;
+  double _collected = 0;
+  double _sinceShown = 0;
   double? _lastTime;
-  double _targetElapsed = 0;
-  DwellStatus _status = DwellStatus.moving;
+  DwellStatus _status = DwellStatus.settling;
   ({double x, double y})? _cursor;
   _Provisional? _map;
 
@@ -103,7 +91,7 @@ class DwellCalibrator {
   bool get done => _index >= targets.length;
 
   /// Quanto o alvo atual já encheu, de 0 a 1.
-  double get progress => _progress;
+  double get progress => math.min(1, _collected / collectSeconds);
 
   DwellStatus get status => _status;
 
@@ -112,9 +100,6 @@ class DwellCalibrator {
   ({double x, double y})? get cursor => _cursor;
 
   List<CalibrationSample> get samples => List.unmodifiable(_samples);
-
-  /// Se o alvo atual já afrouxou as exigências.
-  bool get relaxed => _targetElapsed > relaxAfterSeconds;
 
   /// Recomeça do primeiro alvo.
   void reset() {
@@ -126,12 +111,11 @@ class DwellCalibrator {
   }
 
   void _startTarget() {
-    _progress = 0;
-    _sumX = 0;
-    _sumY = 0;
-    _count = 0;
-    _targetElapsed = 0;
-    _window.clear();
+    _collected = 0;
+    _sinceShown = 0;
+    _xs.clear();
+    _ys.clear();
+    _status = DwellStatus.settling;
   }
 
   /// Processa um quadro.
@@ -143,48 +127,37 @@ class DwellCalibrator {
     if (last != null && t <= last) return DwellEvent.none;
     // Um engasgo da câmera não pode encher meio alvo de uma vez.
     final dt = last == null ? 0.0 : math.min(t - last, 0.2);
-    _targetElapsed += dt;
+    _sinceShown += dt;
 
     final offset = irisOffset(frame);
-    if (offset == null) return _drain(dt, DwellStatus.noFace);
-    if (offset.openness < minimumOpenness) {
-      return _drain(dt, DwellStatus.eyesClosed);
+    if (offset == null) {
+      _status = DwellStatus.noFace;
+      _cursor = null;
+      return DwellEvent.none;
     }
-
-    _window.addLast((t: t, x: offset.x, y: offset.y));
-    while (_window.isNotEmpty && t - _window.first.t > stabilityWindowSeconds) {
-      _window.removeFirst();
+    if (offset.openness < minimumOpenness) {
+      _status = DwellStatus.eyesClosed;
+      return DwellEvent.none;
     }
     _cursor = _map?.apply(offset.x, offset.y);
 
-    final threshold = relaxed ? stabilityThreshold * 1.6 : stabilityThreshold;
-    if (_window.length < 3 || _spread() > threshold) {
-      return _drain(dt, DwellStatus.moving);
-    }
-
-    // Com dois alvos já há mapa nos dois eixos: a partir daí, olhar parado
-    // longe do alvo não conta.
-    final target = targets[_index];
-    final cursor = _cursor;
-    if (_samples.length >= 2 && cursor != null) {
-      final distance = math.sqrt(
-          math.pow(cursor.x - target.x, 2) + math.pow(cursor.y - target.y, 2));
-      final radius = relaxed ? radiusDegrees * 2 : radiusDegrees;
-      if (distance > radius) return _drain(dt, DwellStatus.offTarget);
+    if (_sinceShown < settleSeconds) {
+      _status = DwellStatus.settling;
+      return DwellEvent.none;
     }
 
     _status = DwellStatus.filling;
-    _sumX += offset.x;
-    _sumY += offset.y;
-    _count++;
-    _progress = math.min(1, _progress + dt / dwellSeconds);
-    if (_progress < 1) return DwellEvent.none;
+    _xs.add(offset.x);
+    _ys.add(offset.y);
+    _collected += dt;
+    if (_collected < collectSeconds || _xs.length < 3) return DwellEvent.none;
 
+    final target = targets[_index];
     _samples.add(CalibrationSample(
       targetX: target.x,
       targetY: target.y,
-      offsetX: _sumX / _count,
-      offsetY: _sumY / _count,
+      offsetX: _median(_xs),
+      offsetY: _median(_ys),
     ));
     _map = _Provisional.fit(_samples, defaultGainX, defaultGainY);
     _index++;
@@ -192,47 +165,60 @@ class DwellCalibrator {
     return done ? DwellEvent.finished : DwellEvent.targetConfirmed;
   }
 
-  /// O alvo esvazia duas vezes mais rápido do que enche. Ao esvaziar de
-  /// todo, a medida recomeça: o que entrou antes era de outro momento.
-  DwellEvent _drain(double dt, DwellStatus status) {
-    _status = status;
-    if (status == DwellStatus.noFace || status == DwellStatus.eyesClosed) {
-      _window.clear();
-      if (status == DwellStatus.noFace) _cursor = null;
-    }
-    _progress = math.max(0, _progress - 2 * dt / dwellSeconds);
-    if (_progress == 0) {
-      _sumX = 0;
-      _sumY = 0;
-      _count = 0;
-    }
-    return DwellEvent.none;
-  }
-
-  /// Maior desvio padrão entre os dois eixos, na janela.
-  double _spread() {
-    var mx = 0.0, my = 0.0;
-    for (final p in _window) {
-      mx += p.x;
-      my += p.y;
-    }
-    mx /= _window.length;
-    my /= _window.length;
-    var vx = 0.0, vy = 0.0;
-    for (final p in _window) {
-      vx += (p.x - mx) * (p.x - mx);
-      vy += (p.y - my) * (p.y - my);
-    }
-    return math.sqrt(math.max(vx, vy) / _window.length);
-  }
-
-  /// O mapa final, com todos os alvos.
+  /// O mapa final.
   ///
-  /// Throws [CalibrationError] se faltarem alvos ou forem degenerados.
-  GazeCalibration fit() => GazeCalibration.fit(_samples);
+  /// Se o ajuste com todos os alvos não for aceitável, tenta sem o alvo que
+  /// mais destoa, e de novo, até [maxDiscarded] alvos, enquanto sobrarem
+  /// pelo menos seis.
+  ///
+  /// Throws [CalibrationError] se nem assim houver mapa aceitável, ou se os
+  /// alvos forem degenerados.
+  GazeCalibration fit() {
+    var kept = List.of(_samples);
+    var calibration = GazeCalibration.fit(kept);
+    for (var discarded = 0;
+        !calibration.isAcceptable() &&
+            discarded < maxDiscarded &&
+            kept.length > 6;
+        discarded++) {
+      final worst = _worst(calibration, kept);
+      kept = [...kept]..removeAt(worst);
+      calibration = GazeCalibration.fit(kept);
+    }
+    if (!calibration.isAcceptable()) {
+      throw CalibrationError(
+          'erro de ${calibration.residualDegrees.toStringAsFixed(1)}° '
+          'mesmo descartando os alvos que destoavam');
+    }
+    return calibration;
+  }
+
+  static int _worst(GazeCalibration c, List<CalibrationSample> samples) {
+    var worst = 0;
+    var largest = -1.0;
+    for (var i = 0; i < samples.length; i++) {
+      final s = samples[i];
+      final p = c.apply(s.offsetX, s.offsetY);
+      final error = math
+          .sqrt(math.pow(p.x - s.targetX, 2) + math.pow(p.y - s.targetY, 2));
+      if (error > largest) {
+        largest = error;
+        worst = i;
+      }
+    }
+    return worst;
+  }
 }
 
-/// Mapa provisório, só para o cursor e para a exigência de distância.
+double _median(List<double> values) {
+  final sorted = [...values]..sort();
+  final mid = sorted.length ~/ 2;
+  return sorted.length.isOdd
+      ? sorted[mid]
+      : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/// Mapa provisório, só para o cursor.
 ///
 /// Um alvo: só o desvio, com ganho padrão. Dois: ganho e desvio por eixo.
 /// Três ou mais: o mapa linear completo, o mesmo da calibração final.
@@ -259,8 +245,8 @@ class _Provisional {
         (ox, oy) => (x: ax.$1 * ox + ax.$2, y: ay.$1 * oy + ay.$2));
   }
 
-  /// Ganho e desvio de uma reta pelos pontos; com um ponto só, ou todos no
-  /// mesmo lugar, o ganho padrão.
+  /// Ganho e desvio de uma reta pelos pontos; com um ponto só, ou todos na
+  /// mesma coluna, o ganho padrão.
   static (double, double) _axis(List<(double, double)> points, double gain) {
     final n = points.length;
     final mo = points.fold(0.0, (s, p) => s + p.$1) / n;
@@ -271,8 +257,6 @@ class _Provisional {
       varO += (o - mo) * (o - mo);
       varT += (t - mt) * (t - mt);
     }
-    // Alvos todos na mesma coluna (ou linha) não dizem nada sobre o ganho
-    // nesse eixo: a reta sairia do ruído.
     final slope = varT / n > 1.0 && varO > 1e-12 ? cov / varO : gain;
     return (slope, mt - slope * mo);
   }
