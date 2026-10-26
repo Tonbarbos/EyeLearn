@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'comparison_chart.dart';
+import 'etdd70_comparison.dart';
 import 'panel_widgets.dart';
 import 'teacher_controller.dart';
 
@@ -136,7 +137,20 @@ class _ComparisonTabState extends State<ComparisonTab> {
         ),
         const SizedBox(height: 16),
         if (comparison == null)
-          AppCard(child: Text(notEnough!, style: AppType.subtitle))
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(notEnough!, style: AppType.subtitle),
+                const SizedBox(height: 6),
+                Text(
+                  'Enquanto isso, cada sessão pode ser comparada com as '
+                  'crianças da base ETDD70, na aba Sessões.',
+                  style: AppType.body.copyWith(color: Palette.inkMuted),
+                ),
+              ],
+            ),
+          )
         else
           ..._comparison(comparison),
         if (lowQuality > 0) ...[
@@ -706,6 +720,11 @@ class SessionsTab extends StatelessWidget {
                         'atividade apagada',
                       if (!s.hasUsableQuality()) 'qualidade baixa',
                     ].join(' · ')),
+                    trailing: TextButton(
+                      onPressed: () => showEtdd70Comparison(
+                          context, s, _nameOf(target, s.participantCode)),
+                      child: const Text('Comparar com o ETDD70'),
+                    ),
                   ),
               ],
             ),
