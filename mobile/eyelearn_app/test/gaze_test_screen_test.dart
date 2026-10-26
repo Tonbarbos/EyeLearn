@@ -44,7 +44,7 @@ void main() {
             _follow(source as SyntheticGazeSource, target),
       ),
     ));
-    await _advance(tester, const Duration(seconds: 8));
+    await _advance(tester, const Duration(seconds: 20));
     expect(find.text('Olhe para os números, um de cada vez'), findsOneWidget);
 
     // Olha para o número 3 (alto, à direita).
@@ -66,8 +66,8 @@ void main() {
     // Calibrar de novo volta à bolinha de calibração.
     await tester.tap(find.text('Calibrar de novo'));
     await _advance(tester, const Duration(milliseconds: 300));
-    expect(find.text('Siga a bolinha com os olhos'), findsOneWidget);
-    await _advance(tester, const Duration(seconds: 8));
+    expect(find.byKey(const Key('calibration-hint')), findsOneWidget);
+    await _advance(tester, const Duration(seconds: 20));
     expect(find.byKey(const Key('gaze-hud')), findsOneWidget);
 
     // Sair desliga a câmera (o widget é descartado).

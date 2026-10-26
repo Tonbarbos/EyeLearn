@@ -1,9 +1,14 @@
-/// Tela de calibração: a criança segue um alvo pela tela.
+/// Tela de calibração: a criança segura o olhar em cada bolinha até ela encher.
 ///
-/// Cinco alvos, nos quatro cantos úteis e no centro, que é o mínimo para o mapa
-/// linear de `GazeCalibration`. Apresentados como um jogo -- um ponto que pula
-/// e precisa ser "pego" com o olhar -- porque uma criança de nove anos não
-/// mantém atenção numa tarefa chamada calibração.
+/// Como o botão do Kinect, em que se segura a mão parada até confirmar: a
+/// bolinha só enche enquanto o olhar está parado nela, e esvazia se ele sai.
+/// Desde a primeira bolinha confirmada aparece um cursor onde o aparelho acha
+/// que a criança está olhando, que fica mais certeiro a cada bolinha. A regra
+/// está em `DwellCalibrator` (núcleo), testada sem tela.
+///
+/// Nove alvos: o centro primeiro (dá o ponto de partida do cursor) e depois a
+/// volta pela tela. Mais alvos e medida mais longa por alvo são o que tira o
+/// erro do mapa; o linear de `GazeCalibration` não precisa de mais termos.
 library;
 
 import 'dart:async';
@@ -30,35 +35,18 @@ class CalibrationTarget {
   const CalibrationTarget(this.fractionX, this.fractionY);
 }
 
-/// Os cinco alvos. Centro por último: é o mais fácil de acertar, e terminar
-/// nele deixa a criança com a sensação de ter conseguido.
+/// Os nove alvos, na ordem: centro e depois a volta pela tela.
 const List<CalibrationTarget> calibrationTargets = [
-  CalibrationTarget(0.12, 0.15),
-  CalibrationTarget(0.88, 0.15),
-  CalibrationTarget(0.12, 0.85),
-  CalibrationTarget(0.88, 0.85),
   CalibrationTarget(0.5, 0.5),
+  CalibrationTarget(0.12, 0.15),
+  CalibrationTarget(0.5, 0.15),
+  CalibrationTarget(0.88, 0.15),
+  CalibrationTarget(0.88, 0.5),
+  CalibrationTarget(0.88, 0.85),
+  CalibrationTarget(0.5, 0.85),
+  CalibrationTarget(0.12, 0.85),
+  CalibrationTarget(0.12, 0.5),
 ];
-
-/// Quanto tempo o alvo fica parado antes de a medida ser colhida.
-///
-/// Os primeiros 600 ms são descartados: é o tempo de a criança encontrar o alvo
-/// e a sacada acabar. A medida sai da média dos 400 ms seguintes, com o olhar
-/// já estabilizado.
-const Duration targetSettleTime = Duration(milliseconds: 600);
-const Duration targetMeasureTime = Duration(milliseconds: 400);
-
-/// Até quanto a janela de medida se estende quando chegam poucos quadros.
-///
-/// A 30 Hz, 400 ms trazem 12 quadros e a janela nunca se estende. No
-/// navegador de um celular mais modesto o MediaPipe pode rodar a 15 Hz ou
-/// menos; aí 400 ms trazem 5 ou 6 quadros, e uma piscada bastaria para
-/// reprovar o alvo. A janela cresce até ter [minimumTargetSamples], sem
-/// passar deste limite.
-const Duration targetMeasureMaxTime = Duration(milliseconds: 1200);
-
-/// Medidas mínimas por alvo.
-const int minimumTargetSamples = 5;
 
 class CalibrationScreen extends StatefulWidget {
   /// Meia-largura da tela em graus de ângulo visual.
@@ -93,13 +81,22 @@ class CalibrationScreen extends StatefulWidget {
 
 class _CalibrationScreenState extends State<CalibrationScreen> {
   StreamSubscription<FaceFrame>? _subscription;
-  Timer? _timer;
+  late final DwellCalibrator _calibrator = DwellCalibrator(
+    targets: [
+      for (final t in calibrationTargets)
+        (x: _degreesX(t.fractionX), y: _degreesY(t.fractionY)),
+    ],
+  );
 
-  int _targetIndex = 0;
-  bool _measuring = false;
-  final List<IrisOffset> _measurements = [];
-  final List<CalibrationSample> _samples = [];
+  /// Cursor suavizado, em fração da tela; só para desenhar.
+  Offset? _cursor;
   String? _message;
+  bool _failed = false;
+
+  static double _degreesX(double f) =>
+      (f - 0.5) * 2 * CalibrationScreen.degreesPerHalfWidth;
+  static double _degreesY(double f) =>
+      (f - 0.5) * 2 * CalibrationScreen.degreesPerHalfHeight;
 
   @override
   void initState() {
@@ -109,7 +106,6 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
@@ -118,125 +114,86 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     try {
       await widget.channel.start();
     } on GazeCaptureError catch (error) {
-      if (mounted) setState(() => _message = error.message);
+      if (mounted) {
+        setState(() {
+          _message = error.message;
+          _failed = true;
+        });
+      }
       return;
     }
-
+    if (!mounted) return;
+    _calibrator.reset();
+    widget.onTargetShown?.call(calibrationTargets[0]);
     _subscription = widget.channel.frames().listen(_onFrame);
-    _scheduleTarget();
-  }
-
-  void _scheduleTarget() {
-    _measurements.clear();
-    setState(() => _measuring = false);
-    widget.onTargetShown?.call(calibrationTargets[_targetIndex]);
-
-    _timer = Timer(targetSettleTime, () {
-      setState(() => _measuring = true);
-      final elapsed = Stopwatch()..start();
-      void check() {
-        final enough = _measurements.length >= minimumTargetSamples;
-        if (enough || elapsed.elapsed >= targetMeasureMaxTime) {
-          _collectTarget();
-        } else {
-          _timer = Timer(const Duration(milliseconds: 100), check);
-        }
-      }
-
-      _timer = Timer(targetMeasureTime, check);
-    });
   }
 
   void _onFrame(FaceFrame frame) {
-    if (!_measuring) return;
-
-    final offset = irisOffset(frame);
-    // Durante a piscada o centro de íris é extrapolado e não corresponde a
-    // olhar nenhum: deixar entrar na média deslocaria o alvo inteiro.
-    if (offset == null || offset.openness < minimumOpenness) return;
-    _measurements.add(offset);
+    final event = _calibrator.add(frame);
+    final cursor = _calibrator.cursor;
+    setState(() {
+      if (cursor == null) {
+        _cursor = null;
+      } else {
+        final target = Offset(
+          cursor.x / (2 * CalibrationScreen.degreesPerHalfWidth) + 0.5,
+          cursor.y / (2 * CalibrationScreen.degreesPerHalfHeight) + 0.5,
+        );
+        _cursor = _cursor == null ? target : Offset.lerp(_cursor, target, 0.35);
+      }
+      if (event == DwellEvent.targetConfirmed) _message = null;
+    });
+    switch (event) {
+      case DwellEvent.targetConfirmed:
+        widget.onTargetShown?.call(calibrationTargets[_calibrator.index]);
+      case DwellEvent.finished:
+        _finish();
+      case DwellEvent.none:
+        break;
+    }
   }
 
-  void _collectTarget() {
-    setState(() => _measuring = false);
-
-    // Um alvo sem medida suficiente é repetido, não descartado: perder um alvo
-    // dos cinco deixaria o mapa linear sem folga nenhuma.
-    if (_measurements.length < minimumTargetSamples) {
-      setState(
-        () => _message = 'Não consegui ver bem. Vamos tentar esse de novo!',
-      );
-      _scheduleTarget();
-      return;
-    }
-
-    var sumX = 0.0;
-    var sumY = 0.0;
-    for (final measurement in _measurements) {
-      sumX += measurement.x;
-      sumY += measurement.y;
-    }
-
-    final target = calibrationTargets[_targetIndex];
-    _samples.add(
-      CalibrationSample(
-        // Fração da tela para graus, com a origem no centro.
-        targetX: (target.fractionX - 0.5) *
-            2 *
-            CalibrationScreen.degreesPerHalfWidth,
-        targetY: (target.fractionY - 0.5) *
-            2 *
-            CalibrationScreen.degreesPerHalfHeight,
-        offsetX: sumX / _measurements.length,
-        offsetY: sumY / _measurements.length,
-      ),
-    );
-
-    if (_targetIndex + 1 < calibrationTargets.length) {
-      setState(() {
-        _targetIndex++;
-        _message = null;
-      });
-      _scheduleTarget();
-      return;
-    }
-
-    _finish();
+  void _restart(String message) {
+    setState(() {
+      _message = message;
+      _cursor = null;
+    });
+    _calibrator.reset();
+    widget.onTargetShown?.call(calibrationTargets[0]);
   }
 
   void _finish() {
-    _subscription?.cancel();
-    _subscription = null;
-
     try {
-      final calibration = GazeCalibration.fit(_samples);
+      final calibration = _calibrator.fit();
       if (!calibration.isAcceptable()) {
-        setState(() {
-          _message = 'Ficou meio torto. Vamos fazer de novo, bem devagar.';
-          _targetIndex = 0;
-          _samples.clear();
-        });
-        _begin();
+        _restart('Ficou meio torto. Vamos fazer de novo, bem devagar.');
         return;
       }
+      _subscription?.cancel();
+      _subscription = null;
       widget.onCalibrated(calibration);
     } on CalibrationError {
-      setState(() {
-        _message = 'Não deu certo. Vamos tentar outra vez!';
-        _targetIndex = 0;
-        _samples.clear();
-      });
-      _begin();
+      _restart('Não deu certo. Vamos tentar outra vez!');
     }
   }
 
+  String get _hint => switch (_calibrator.status) {
+        DwellStatus.filling => 'Isso! Continue olhando…',
+        DwellStatus.moving => 'Olhe para a bolinha e segure o olhar',
+        DwellStatus.offTarget => 'Olhe para a bolinha amarela',
+        DwellStatus.noFace => 'Não estou vendo seu rosto',
+        DwellStatus.eyesClosed => 'Olhos bem abertos!',
+      };
+
   @override
   Widget build(BuildContext context) {
-    final target = calibrationTargets[_targetIndex];
+    final done = _calibrator.done;
+    final target = calibrationTargets[
+        done ? calibrationTargets.length - 1 : _calibrator.index];
+    final cursor = _cursor;
 
     return Scaffold(
-      // Fundo escuro em gradiente: o alvo precisa de contraste máximo, e um
-      // campo uniforme tiraria do olho qualquer referência de profundidade.
+      // Fundo escuro em gradiente: o alvo precisa de contraste máximo.
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -248,9 +205,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         child: SafeArea(
           // O LayoutBuilder envolve o Stack, e não o contrário: um Positioned
           // devolvido de dentro do builder teria o LayoutBuilder como pai, não
-          // o Stack, e o Flutter lançaria "Incorrect use of ParentDataWidget"
-          // a cada quadro -- o alvo não aparecia e a calibração seguia com o
-          // percurso errado.
+          // o Stack, e o Flutter lançaria "Incorrect use of ParentDataWidget".
           child: LayoutBuilder(
             builder: (context, constraints) => Stack(
               children: [
@@ -261,7 +216,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                     child: Column(
                       children: [
                         Text(
-                          _message ?? 'Siga a bolinha com os olhos',
+                          _message ?? _hint,
+                          key: const Key('calibration-hint'),
                           textAlign: TextAlign.center,
                           style: AppType.title.copyWith(
                             color: Colors.white,
@@ -270,7 +226,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Deixe a cabeça parada',
+                          _failed
+                              ? ''
+                              : 'Segure o olhar até a bolinha encher. '
+                                  'Deixe a cabeça parada.',
+                          textAlign: TextAlign.center,
                           style: AppType.body.copyWith(
                             color: Colors.white54,
                             fontSize: 14,
@@ -280,19 +240,30 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                     ),
                   ),
                 ),
-                Positioned(
-                  // Centra o ponto no alvo: metade do diâmetro maior.
-                  left: target.fractionX * constraints.maxWidth - 34,
-                  top: target.fractionY * constraints.maxHeight - 34,
-                  child: _TargetDot(active: _measuring),
-                ),
+                if (!_failed)
+                  Positioned(
+                    left: target.fractionX * constraints.maxWidth - 40,
+                    top: target.fractionY * constraints.maxHeight - 40,
+                    child: _TargetDot(
+                      progress: _calibrator.progress,
+                      filling: _calibrator.status == DwellStatus.filling,
+                    ),
+                  ),
+                if (cursor != null && !_failed)
+                  Positioned(
+                    left: cursor.dx * constraints.maxWidth - 9,
+                    top: cursor.dy * constraints.maxHeight - 9,
+                    child: const IgnorePointer(child: _Cursor()),
+                  ),
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 28),
                     child: StepDots(
                       count: calibrationTargets.length,
-                      current: _targetIndex,
+                      current: done
+                          ? calibrationTargets.length - 1
+                          : _calibrator.index,
                     ),
                   ),
                 ),
@@ -305,77 +276,84 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 }
 
-/// A bolinha do alvo.
-///
-/// Cresce e ganha um halo quando a medida começa, para dar à criança o sinal
-/// de que é agora que ela precisa olhar firme. O halo pulsa devagar: parado,
-/// o alvo some no fundo escuro; rápido, vira distração e o olho persegue a
-/// animação em vez de pousar no centro.
-class _TargetDot extends StatefulWidget {
-  final bool active;
+/// O alvo: um anel que enche conforme o olhar fica nele.
+class _TargetDot extends StatelessWidget {
+  final double progress;
+  final bool filling;
 
-  const _TargetDot({required this.active});
+  const _TargetDot({required this.progress, required this.filling});
 
   @override
-  State<_TargetDot> createState() => _TargetDotState();
+  Widget build(BuildContext context) => SizedBox(
+        width: 80,
+        height: 80,
+        child: CustomPaint(
+          painter: _RingPainter(progress: progress, filling: filling),
+        ),
+      );
 }
 
-class _TargetDotState extends State<_TargetDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat(reverse: true);
+class _RingPainter extends CustomPainter {
+  final double progress;
+  final bool filling;
+
+  _RingPainter({required this.progress, required this.filling});
 
   @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = widget.active ? Palette.amber : const Color(0xFF8E9BDB);
-
-    return SizedBox(
-      width: 68,
-      height: 68,
-      child: AnimatedBuilder(
-        animation: _pulse,
-        builder: (context, child) => Stack(
-          alignment: Alignment.center,
-          children: [
-            // Halo.
-            Container(
-              width: widget.active ? 50 + _pulse.value * 18 : 34,
-              height: widget.active ? 50 + _pulse.value * 18 : 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: colour.withValues(
-                  alpha: widget.active ? 0.22 - _pulse.value * 0.1 : 0.14,
-                ),
-              ),
-            ),
-            // Miolo.
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 240),
-              curve: Curves.easeOut,
-              width: widget.active ? 30 : 22,
-              height: widget.active ? 30 : 22,
-              decoration: BoxDecoration(
-                color: colour,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: colour.withValues(alpha: 0.55),
-                    blurRadius: widget.active ? 22 : 10,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+  void paint(Canvas canvas, Size size) {
+    final centre = size.center(Offset.zero);
+    // Halo, mais forte enquanto enche.
+    canvas.drawCircle(
+      centre,
+      34,
+      Paint()..color = Palette.amber.withValues(alpha: filling ? 0.22 : 0.12),
+    );
+    // Trilho do anel.
+    canvas.drawCircle(
+      centre,
+      26,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6
+        ..color = Colors.white.withValues(alpha: 0.18),
+    );
+    // O quanto já encheu.
+    canvas.drawArc(
+      Rect.fromCircle(center: centre, radius: 26),
+      -1.5708,
+      progress * 6.2832,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6
+        ..strokeCap = StrokeCap.round
+        ..color = Palette.amber,
+    );
+    // Miolo, que cresce junto: é para onde o olho deve ir.
+    canvas.drawCircle(
+      centre,
+      7 + 12 * progress,
+      Paint()..color = Palette.amber,
     );
   }
+
+  @override
+  bool shouldRepaint(_RingPainter old) =>
+      old.progress != progress || old.filling != filling;
+}
+
+/// Onde o aparelho acha que a criança está olhando, pelo mapa provisório.
+class _Cursor extends StatelessWidget {
+  const _Cursor();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.35),
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+      );
 }
