@@ -130,6 +130,9 @@ class _HomeworkHomeState extends State<HomeworkHome> {
   bool _teacherFirst = false;
   String? _pendingLink;
 
+  /// Erro de um link compacto que não abriu (cortado ou de outra versão).
+  String? _linkError;
+
   HomeworkEnvironment get env => widget.environment;
 
   @override
@@ -155,31 +158,36 @@ class _HomeworkHomeState extends State<HomeworkHome> {
       return;
     }
     final saved = await env.storage.load();
-    final hasLink = link != null && Roster.fragmentOf(link).isNotEmpty;
     Roster? roster;
 
-    // Link que já traz o código: entra direto, sem perguntar nada. A turma é
-    // a do link, mesmo que outra estivesse guardada.
-    final linkCode = hasLink ? Roster.codeOf(link) : null;
-    if (linkCode != null) {
+    // Link compacto (`#p=`), o do painel web: a turma vem aberta no link, e
+    // entra direto, sem perguntar nada. A turma é a do link, mesmo que outra
+    // estivesse guardada.
+    if (link != null) {
       try {
-        final json = Roster.openSealed(Roster.fragmentOf(link!), linkCode);
-        roster = Roster.fromJsonString(json);
-        await env.storage.save(packageJson: json, code: linkCode);
-        if (mounted) {
-          setState(() {
-            _roster = roster;
-            _loading = false;
-          });
+        final compact = Roster.compactOf(link);
+        if (compact != null) {
+          roster = Roster.fromJsonString(compact);
+          await env.storage.save(packageJson: compact, code: '');
+          if (mounted) {
+            setState(() {
+              _roster = roster;
+              _loading = false;
+            });
+          }
+          return;
         }
-        return;
-      } on FormatException {
-        // Link cortado ou alterado: cai no caminho de sempre, que pede o
-        // código e explica o erro.
-        roster = null;
+      } on FormatException catch (error) {
+        _linkError = error.message;
+      } on RangeError {
+        _linkError = 'o link está incompleto';
       }
     }
 
+    // Um link compacto que não abriu não é link cifrado: não pede código.
+    final hasLink = link != null &&
+        _linkError == null &&
+        Roster.fragmentOf(link).isNotEmpty;
     if (saved != null) {
       roster = Roster.fromJsonString(saved.packageJson);
       if (hasLink) {
@@ -278,6 +286,7 @@ class _HomeworkHomeState extends State<HomeworkHome> {
         hint: env.joinHint,
         onTeacher: teacher,
         onTestGaze: _openGazeTest,
+        initialError: _linkError,
       );
     }
     return ChooseStudentScreen(
@@ -334,6 +343,9 @@ class BrandHero extends StatelessWidget {
 class JoinClassScreen extends StatefulWidget {
   final String? initialLink;
   final Future<void> Function(String packageJson, String code) onJoined;
+
+  /// Erro do link com que o aplicativo foi aberto, para mostrar de cara.
+  final String? initialError;
   final Widget? hint;
   final VoidCallback? onTeacher;
   final VoidCallback? onTestGaze;
@@ -342,6 +354,7 @@ class JoinClassScreen extends StatefulWidget {
     super.key,
     required this.initialLink,
     required this.onJoined,
+    this.initialError,
     this.hint,
     this.onTeacher,
     this.onTestGaze,
@@ -354,7 +367,8 @@ class JoinClassScreen extends StatefulWidget {
 class _JoinClassScreenState extends State<JoinClassScreen> {
   late final _link = TextEditingController(text: widget.initialLink ?? '');
   final _code = TextEditingController();
-  String? _error;
+  late String? _error =
+      widget.initialError == null ? null : _sentence(widget.initialError!);
   bool _opening = false;
 
   bool get _hasLink => (widget.initialLink ?? '').isNotEmpty;
@@ -375,10 +389,16 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
     // instante no celular.
     await Future<void>.delayed(const Duration(milliseconds: 30));
     try {
-      final code = Roster.codeOf(_link.text) ?? _code.text;
-      final json = Roster.openSealed(Roster.fragmentOf(_link.text), code);
+      // Link compacto colado: abre sem código.
+      final compact = Roster.compactOf(_link.text);
+      if (compact != null) {
+        Roster.fromJsonString(compact); // confere o formato antes de guardar
+        await widget.onJoined(compact, '');
+        return;
+      }
+      final json = Roster.openSealed(Roster.fragmentOf(_link.text), _code.text);
       Roster.fromJsonString(json); // confere o formato antes de guardar
-      await widget.onJoined(json, code);
+      await widget.onJoined(json, _code.text);
     } on FormatException catch (error) {
       setState(() => _error = _sentence(error.message));
     } finally {
