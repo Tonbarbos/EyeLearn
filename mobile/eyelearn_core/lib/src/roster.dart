@@ -38,8 +38,56 @@ const _aad = 'eyelearn-turma';
 /// Chave do fragmento do link: `https://.../#t=<pacote>`.
 const packageFragmentKey = 't';
 
-/// Chave do código da turma no fragmento: `...#t=<pacote>&c=<código>`.
-const packageCodeKey = 'c';
+/// Chave do pacote compacto, aberto, no fragmento: `...#p=<pacote>`.
+const compactFragmentKey = 'p';
+
+/// Versão do pacote compacto.
+const compactFormatVersion = 4;
+
+/// As tarefas, na ordem dos índices do pacote compacto.
+const compactTasks = ['syllables', 'text', 'pseudotext'];
+
+/// Sal da etiqueta curta do PIN: tirado do código do aluno, que é único e
+/// sorteado, para não precisar ir no link.
+List<int> compactPinSalt(String studentCode) =>
+    utf8.encode('eyelearn:$studentCode');
+
+/// Bytes da etiqueta curta do PIN.
+const compactPinBytes = 4;
+
+const _sep = '|';
+
+/// Tira de um nome os separadores do pacote compacto.
+String compactSafe(String text) => text.replaceAll(RegExp('[|;,]'), ' ').trim();
+
+String _compactPinHash(String code, String pin, int iterations) {
+  final dot = pin.indexOf('.');
+  final (salt, key) = dot >= 0
+      ? (_unb64(pin.substring(0, dot)), _unb64(pin.substring(dot + 1)))
+      : (compactPinSalt(code), _unb64(pin));
+  return 'pbkdf2-sha256\$$iterations\$${_hex(salt)}\$${_hex(key)}';
+}
+
+/// Dias desde 1970-01-01, a partir de uma data (só ano, mês e dia contam).
+int dayNumber(DateTime day) =>
+    DateTime.utc(day.year, day.month, day.day).millisecondsSinceEpoch ~/
+    Duration.millisecondsPerDay;
+
+DateTime _utcDay(int day) =>
+    DateTime.fromMillisecondsSinceEpoch(day * Duration.millisecondsPerDay,
+        isUtc: true);
+
+DateTime _localDay(int day) {
+  final d = _utcDay(day);
+  return DateTime(d.year, d.month, d.day);
+}
+
+/// 23:59:59 do dia, num fuso [offsetMinutes] a leste de UTC.
+DateTime _dayEnd(int day, int offsetMinutes) {
+  final d = _utcDay(day);
+  return DateTime.utc(d.year, d.month, d.day, 23, 59, 59)
+      .subtract(Duration(minutes: offsetMinutes));
+}
 
 class RosterStudent {
   final String code;
@@ -168,8 +216,89 @@ class Roster {
     );
   }
 
-  factory Roster.fromJsonString(String source) =>
-      Roster.fromJson(jsonDecode(source) as Map<String, dynamic>);
+  /// Lê o pacote como texto: o JSON da versão 3 ou o texto compacto da 4.
+  factory Roster.fromJsonString(String source) {
+    if (source.startsWith('$compactFormatVersion$_sep')) {
+      return Roster.fromCompact(source);
+    }
+    return Roster.fromJson(jsonDecode(source) as Map<String, dynamic>);
+  }
+
+  /// O pacote compacto (versão 4), que vai aberto no link: `#p=<pacote>`.
+  ///
+  /// Texto com separadores, não JSON, para o link ficar curto:
+  ///
+  ///     4|turma|uid|dia|iterações|alunos|atividades
+  ///
+  /// * alunos, separados por `;`: `código,nome de exibição,PIN`, em que o PIN
+  ///   é a etiqueta curta de `compactPinTag` (quatro bytes de PBKDF2, sal
+  ///   tirado do código) ou, para aluno cadastrado antes dela, `sal.chave`
+  ///   completos;
+  /// * atividades, separadas por `;`: `código,tarefa,início,prazo,fuso`, com
+  ///   a tarefa pelo índice em [compactTasks], os dias contados desde
+  ///   1970-01-01 e o fuso em minutos -- o prazo é sempre o fim do dia,
+  ///   23:59:59, no fuso do professor.
+  ///
+  /// Quatro bytes de PIN bastam: quem tem o link pode testar as dez mil
+  /// combinações de quatro dígitos com qualquer tamanho de hash. O que
+  /// protege o PIN é o bloqueio depois de erros seguidos, na tela.
+  factory Roster.fromCompact(String source) {
+    final fields = source.split(_sep);
+    if (fields.length != 7 || fields[0] != '$compactFormatVersion') {
+      throw const FormatException(
+          'link de turma de outra versão; peça ao professor um link novo');
+    }
+    final iterations = int.parse(fields[4]);
+    List<List<String>> rows(String text) => text.isEmpty
+        ? const []
+        : [for (final row in text.split(';')) row.split(',')];
+    final students = [
+      for (final row in rows(fields[5]))
+        RosterStudent(
+          code: row[0],
+          displayName: row[1],
+          pinHash: _compactPinHash(row[0], row[2], iterations),
+        ),
+    ];
+    if ({for (final s in students) s.code}.length != students.length) {
+      throw const FormatException('código de aluno repetido na turma');
+    }
+    final activities = [
+      for (final row in rows(fields[6]))
+        HomeworkActivity(
+          code: row[0],
+          task: compactTasks[int.parse(row[1])],
+          opensOn: _localDay(int.parse(row[2])),
+          dueAt: _dayEnd(int.parse(row[3]), int.parse(row[4])),
+        ),
+    ];
+    return Roster(
+      className: fields[1],
+      classUid: fields[2],
+      exportedAt: _utcDay(int.parse(fields[3])).toIso8601String(),
+      students: List.unmodifiable(students),
+      activities: List.unmodifiable(activities),
+    );
+  }
+
+  /// O pacote compacto de um link `...#p=<pacote>`, ou `null` se o link não
+  /// for desse tipo.
+  static String? compactOf(String link) {
+    final hash = link.indexOf('#');
+    if (hash < 0) return null;
+    for (final part in link.substring(hash + 1).split('&')) {
+      if (part.startsWith('$compactFragmentKey=')) {
+        final body = part.substring(compactFragmentKey.length + 1).trim();
+        if (body.isEmpty) return null;
+        try {
+          return utf8.decode(base64Url.decode(base64Url.normalize(body)));
+        } on FormatException {
+          throw const FormatException('o link está incompleto');
+        }
+      }
+    }
+    return null;
+  }
 
   /// Decifra o pacote do link com o código da turma.
   ///
@@ -206,25 +335,6 @@ class Roster {
         : fragment;
     final amp = body.indexOf('&');
     return amp >= 0 ? body.substring(0, amp) : body;
-  }
-
-  /// O código da turma, quando o link já o traz (`...#t=<pacote>&c=<código>`).
-  ///
-  /// O painel web põe o código no próprio link: quem abre o link entra direto,
-  /// sem digitar nada. É a troca de "link e código separados" por "o link é a
-  /// chave", como um documento compartilhado por link: quem recebe o link
-  /// encaminhado também entra. Links sem o código continuam pedindo.
-  static String? codeOf(String link) {
-    final hash = link.indexOf('#');
-    if (hash < 0) return null;
-    for (final part in link.substring(hash + 1).split('&')) {
-      if (part.startsWith('$packageCodeKey=')) {
-        final code =
-            normalizeClassCode(part.substring(packageCodeKey.length + 1));
-        return code.isEmpty ? null : code;
-      }
-    }
-    return null;
   }
 }
 

@@ -138,35 +138,39 @@ void main() {
     expect(
         find.textContaining('PIN de todos os alunos é 1234'), findsOneWidget);
 
-    // 4. Link: com o código dentro.
-    await _tap(tester, find.text('Gerar o link'));
-    final url = tester
-        .widget<SelectableText>(find.byKey(const Key('class-link')))
-        .data!;
-    expect(url, startsWith('$defaultAppUrl#t='));
-    final code = Roster.codeOf(url);
-    expect(code, isNotNull);
+    // 4. Link: já pronto, sem botão de gerar; abre sem código.
+    final clipboard = <String>[];
+    tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboard.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+    expect(find.text('Gerar o link'), findsNothing);
+    await _tap(tester, find.text('Copiar o link'));
+    final url = clipboard.single;
+    expect(url, startsWith('$defaultAppUrl#p='));
+    expect(url.length, lessThan(300));
 
     // O aplicativo do aluno abre o link sozinho, e o PIN 1234 entra.
-    final roster = Roster.openLink(url, code!);
+    final roster = Roster.fromJsonString(Roster.compactOf(url)!);
     expect(roster.className, '5º B');
     expect(roster.students.map((s) => s.displayName), ['Ana S.', 'Bruno L.']);
     expect(roster.students.first.checkPin('1234'), isTrue);
     expect(roster.activities.single.task, 'text');
 
-    // Mudou a turma depois do link: o painel avisa que o link ficou velho.
+    // Mudou a turma depois de copiar: o painel avisa para copiar de novo.
     await tester.enterText(name, 'Carla Dias');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await _settle(tester);
-    expect(find.textContaining('gere o link de novo'), findsOneWidget);
-    await _tap(tester, find.text('Gerar o link'));
-    final fresh = tester
-        .widget<SelectableText>(find.byKey(const Key('class-link')))
-        .data!;
-    expect(
-        Roster.openLink(fresh, Roster.codeOf(fresh)!).students, hasLength(3));
-    // O código não mudou: o link velho continua abrindo (sem a Carla).
-    expect(Roster.codeOf(fresh), code);
+    expect(find.textContaining('copie o link de novo'), findsOneWidget);
+    await _tap(tester, find.text('Copiar o link'));
+    expect(find.textContaining('copie o link de novo'), findsNothing);
+    expect(Roster.fromJsonString(Roster.compactOf(clipboard.last)!).students,
+        hasLength(3));
 
     // Fechar e abrir: o cofre volta com a senha.
     await tester.pumpWidget(const SizedBox());
@@ -313,12 +317,12 @@ void main() {
     expect(find.text('Criar o painel'), findsOneWidget);
   });
 
-  testWidgets('o link com o código entra direto na turma', (tester) async {
+  testWidgets('o link compacto entra direto na turma', (tester) async {
     final vault = TeacherVault.create('prof', 'Prof. Ana');
     final turma = vault.createClass('5º C');
     vault.addStudent(turma, 'Ana Souza',
         pin: debugStudentPin, enforcePinRules: false);
-    final link = vault.shareLink(turma, includeCode: true);
+    final link = vault.compactLink(turma);
     final storage = MemoryClassStorage();
 
     await tester.binding.setSurfaceSize(const Size(420, 1400));
@@ -329,13 +333,32 @@ void main() {
         gaze: SyntheticGazeSource.new,
         storage: storage,
         clock: () => _today,
-        initialLink: link.url,
+        initialLink: link,
       ),
     ));
     await _settle(tester);
     expect(find.text('Código da turma'), findsNothing);
     expect(find.text('Quem vai ler hoje?'), findsOneWidget);
     expect(find.text('5º C'.toUpperCase()), findsOneWidget);
-    expect((await storage.load())!.code, normalizeClassCode(link.accessCode));
+    // Guardada no aparelho: abre de novo sem o link.
+    expect(Roster.fromJsonString((await storage.load())!.packageJson).className,
+        '5º C');
+  });
+
+  testWidgets('link compacto cortado explica, sem pedir código',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(HomeworkApp(
+      environment: HomeworkEnvironment(
+        models: const {},
+        gaze: SyntheticGazeSource.new,
+        storage: MemoryClassStorage(),
+        clock: () => _today,
+        initialLink: '$defaultAppUrl#p=NHw1wrogQXw1YmY5',
+      ),
+    ));
+    await _settle(tester);
+    expect(find.textContaining('outra versão'), findsOneWidget);
   });
 }

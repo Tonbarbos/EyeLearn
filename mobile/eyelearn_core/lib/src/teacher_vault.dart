@@ -184,11 +184,17 @@ class VaultStudent {
   final String? birthDate;
   String pinHash;
 
+  /// Etiqueta curta do PIN, para o link compacto ([compactPinTag]). Só
+  /// existe para PIN definido depois que ela foi criada; sem ela, o link
+  /// leva o hash inteiro.
+  String? pinTag;
+
   VaultStudent({
     required this.code,
     required this.fullName,
     required this.pinHash,
     this.birthDate,
+    this.pinTag,
   });
 
   factory VaultStudent.fromJson(Map<String, dynamic> json) => VaultStudent(
@@ -196,6 +202,7 @@ class VaultStudent {
         fullName: json['full_name'] as String,
         birthDate: json['birth_date'] as String?,
         pinHash: json['pin_hash'] as String,
+        pinTag: json['pin_tag'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -203,6 +210,7 @@ class VaultStudent {
         'full_name': fullName,
         if (birthDate != null) 'birth_date': birthDate,
         'pin_hash': pinHash,
+        if (pinTag != null) 'pin_tag': pinTag,
       };
 }
 
@@ -501,6 +509,7 @@ class TeacherVault {
       fullName: name,
       birthDate: _blankToNull(birthDate),
       pinHash: hashPin(chosen),
+      pinTag: compactPinTag(code, chosen),
     );
     target.students.add(student);
     return NewStudent(student, chosen);
@@ -515,6 +524,7 @@ class TeacherVault {
     final chosen = pin ?? generatePin();
     _checkPin(chosen, enforcePinRules);
     student.pinHash = hashPin(chosen);
+    student.pinTag = compactPinTag(student.code, chosen);
     return chosen;
   }
 
@@ -617,24 +627,86 @@ class TeacherVault {
 
   /// Link e código para mandar às famílias. O link muda a cada pedido (sal e
   /// nonce novos) e precisa ser mandado de novo quando a turma ou as
-  /// atividades mudam; o código fica o mesmo. Com [includeCode], o código vai
-  /// no próprio link (ver [Roster.codeOf]) e quem abre entra direto.
+  /// atividades mudam; o código fica o mesmo.
   ShareLink shareLink(
     VaultClass target, {
     String baseUrl = defaultAppUrl,
     DateTime? now,
     Uint8List? salt,
     Uint8List? nonce,
-    bool includeCode = false,
   }) {
     final code = accessCode(target);
     final sealed = sealClassPackage(classPackage(target, now: now), code,
         salt: salt, nonce: nonce);
-    final withCode = includeCode ? '&$packageCodeKey=$code' : '';
     return ShareLink(
-      '${baseUrl.split('#').first}#$packageFragmentKey=$sealed$withCode',
+      '${baseUrl.split('#').first}#$packageFragmentKey=$sealed',
       formatClassCode(code),
     );
+  }
+
+  /// O pacote compacto (versão 4) da turma; ver [Roster.fromCompact].
+  String compactPackage(VaultClass target, {DateTime? now}) {
+    final students = target.sortedStudents;
+    final names = displayNames([for (final s in students) s.fullName]);
+    final iterations = <int>{};
+    final entries = <List<String>>[];
+    for (var i = 0; i < students.length; i++) {
+      final student = students[i];
+      final parts = student.pinHash.split(r'$');
+      if (parts.length != 4 || parts[0] != 'pbkdf2-sha256') {
+        throw StateError('PIN de ${student.code} em esquema desconhecido');
+      }
+      iterations.add(int.parse(parts[1]));
+      entries.add([
+        student.code,
+        compactSafe(names[i]),
+        student.pinTag ?? '${_b64(parts[2])}.${_b64(parts[3])}',
+      ]);
+    }
+    if (iterations.length > 1) {
+      throw StateError('PINs com contagens de iteração diferentes');
+    }
+    entries.sort((a, b) => _casefold(a[1]).compareTo(_casefold(b[1])));
+
+    final instant = (now ?? DateTime.now()).toUtc();
+    final recent = instant.subtract(const Duration(days: recentlyClosedDays));
+    final activities = [
+      for (final a in target.sortedActivities)
+        if (!a.due.isBefore(recent))
+          [
+            a.code,
+            compactTasks.indexOf(a.task),
+            dayNumber(DateTime.parse(a.opensOn)),
+            dayNumber(DateTime.parse(a.dueAt.substring(0, 10))),
+            _offsetMinutes(a.dueAt),
+          ].join(','),
+    ];
+    return [
+      compactFormatVersion,
+      compactSafe(target.name),
+      target.uid,
+      dayNumber(instant),
+      iterations.isEmpty ? pinIterations : iterations.first,
+      [for (final e in entries) e.join(',')].join(';'),
+      activities.join(';'),
+    ].join('|');
+  }
+
+  /// O link que vai às famílias: o pacote compacto, aberto, depois do `#`.
+  ///
+  /// Sem cifra e sem código: quem abre o link entra direto. O que protege
+  /// os nomes é o mesmo que protegia antes, quando o código ia junto: o link
+  /// só circula no grupo da turma, e o que vem depois do `#` não chega ao
+  /// servidor. O link muda quando a turma muda e precisa ser mandado de novo.
+  String compactLink(
+    VaultClass target, {
+    String baseUrl = defaultAppUrl,
+    DateTime? now,
+  }) {
+    final body = base64Url
+        .encode(utf8.encode(compactPackage(target, now: now)))
+        .replaceAll('=', '');
+    return '${baseUrl.split('#').first}#$compactFragmentKey=$body';
   }
 
   // -- sessões ---------------------------------------------------------------
@@ -707,6 +779,22 @@ String? _blankToNull(String? text) {
   if (text == null) return null;
   final clean = _collapse(text);
   return clean.isEmpty ? null : clean;
+}
+
+/// Etiqueta curta do PIN: quatro bytes de PBKDF2, com o sal tirado do código
+/// do aluno. É o que vai no link compacto.
+String compactPinTag(String studentCode, String pin) => base64Url
+    .encode(pbkdf2Sha256(utf8.encode(pin), compactPinSalt(studentCode),
+        pinIterations, compactPinBytes))
+    .replaceAll('=', '');
+
+/// Deslocamento do fuso de um instante ISO com fuso (`...-03:00`), em
+/// minutos a leste de UTC.
+int _offsetMinutes(String iso) {
+  final match = RegExp(r'([+-])(\d\d):(\d\d)$').firstMatch(iso);
+  if (match == null) return 0; // termina em Z
+  final minutes = int.parse(match[2]!) * 60 + int.parse(match[3]!);
+  return match[1] == '-' ? -minutes : minutes;
 }
 
 /// Aproximação do `str.casefold` do Python, suficiente para nomes.

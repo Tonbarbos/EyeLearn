@@ -97,14 +97,58 @@ void main() {
       expect(a.accessCode, b.accessCode);
     });
 
-    test('com o código no link, o link sozinho abre a turma', () {
+    test('link compacto: abre direto, com os mesmos alunos e prazos', () {
+      final vault = TeacherVault.create('prof', 'Prof. Ana');
+      final turma = vault.createClass('5º A');
+      for (final name in ['Ana Luiza Souza', 'Bruno Lima', 'João da Silva']) {
+        vault.addStudent(turma, name,
+            pin: debugStudentPin, enforcePinRules: false);
+      }
+      final hoje = DateTime(2026, 10, 21);
+      final atividade = vault.createActivity(turma, 'pseudotext',
+          due: DateTime(2026, 10, 28), opens: hoje, today: hoje);
+
+      final url = vault.compactLink(turma, now: DateTime.utc(2026, 10, 21));
+      expect(url, startsWith('$defaultAppUrl#p='));
+      final roster = Roster.fromJsonString(Roster.compactOf(url)!);
+      expect(roster.className, '5º A');
+      expect(roster.classUid, turma.uid);
+      expect(roster.students.map((s) => s.displayName),
+          ['Ana S.', 'Bruno L.', 'João S.']);
+      for (final s in roster.students) {
+        expect(s.checkPin('1234'), isTrue);
+        expect(s.checkPin('4321'), isFalse);
+      }
+      final a = roster.activities.single;
+      expect(a.code, atividade.code);
+      expect(a.task, 'pseudotext');
+      expect(a.opensOn, DateTime(2026, 10, 21));
+      expect(a.dueAt.isAtSameMomentAs(atividade.due), isTrue);
+      expect(Roster.compactOf('$defaultAppUrl#t=abc'), isNull);
+    });
+
+    test('aluno sem etiqueta curta (cofre antigo) vai com o hash inteiro', () {
       final (vault, target) = _exampleVault();
-      final link = vault.shareLink(target, includeCode: true);
-      final code = Roster.codeOf(link.url);
-      expect(code, normalizeClassCode(link.accessCode));
-      expect(Roster.openLink(link.url, code!).className, target.name);
-      // Sem o código no link, nada muda.
-      expect(Roster.codeOf(vault.shareLink(target).url), isNull);
+      final url = vault.compactLink(target);
+      final roster = Roster.fromJsonString(Roster.compactOf(url)!);
+      final pins = (_fixture['pins_for_tests'] as Map).cast<String, String>();
+      for (final s in roster.students) {
+        expect(s.checkPin(pins[s.code]!), isTrue, reason: s.code);
+      }
+    });
+
+    test('o link compacto é bem mais curto que o cifrado', () {
+      final vault = TeacherVault.create('prof', 'Prof. Ana');
+      final turma = vault.createClass('5º A');
+      for (var i = 0; i < 30; i++) {
+        vault.addStudent(turma, 'Aluno$i Sobrenome$i',
+            pin: debugStudentPin, enforcePinRules: false);
+      }
+      vault.createActivity(turma, 'text', due: DateTime.now());
+      final compact = vault.compactLink(turma).length;
+      final sealed = vault.shareLink(turma).url.length;
+      expect(compact, lessThan(sealed / 3));
+      expect(compact, lessThan(1700));
     });
 
     test('PIN de teste 1234 só com as regras desligadas', () {

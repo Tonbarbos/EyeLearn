@@ -168,10 +168,10 @@ primeira vez, o painel pede seu nome e uma senha. Depois, numa tela só:
    inventadas). Abre hoje; o prazo é de 3, 7 ou 14 dias.
 3. **Alunos**: digite o nome e Enter. Por enquanto, em **modo de teste**,
    todos os alunos têm o PIN **1234**.
-4. **Link**: "Gerar o link" e "Copiar o link", para o grupo das famílias.
-   Quem abre o link entra direto na turma; a criança escolhe o nome e digita
-   o PIN. Se a turma mudar depois (aluno ou atividade novos), o painel avisa
-   que o link ficou velho.
+4. **Link**: já aparece pronto; "Copiar o link" e mandar no grupo das
+   famílias. Quem abre o link entra direto na turma; a criança escolhe o nome
+   e digita o PIN. Se a turma mudar depois de copiado (aluno ou atividade
+   novos), o painel avisa para copiar e mandar de novo.
 5. As sessões voltam como arquivos (WhatsApp, e-mail). Salve-os no
    computador e importe todos de uma vez em **Sessões**. A lista de
    atividades mostra quantos alunos já entregaram cada uma.
@@ -192,14 +192,20 @@ Duas consequências que o painel explica antes de criar o cofre:
   qualquer navegador, com a mesma senha, por "Restaurar uma cópia de
   segurança". O painel lembra quando a cópia está velha.
 
-**O link leva a turma cifrada**, depois do `#` -- parte do endereço que o
-navegador não envia ao servidor. O site que serve o aplicativo (GitHub Pages)
-nunca vê nome de aluno. A cifra é AES-256-GCM com chave derivada do código da
-turma, e o painel põe o código no próprio link (`#t=<turma>&c=<código>`):
-**o link é a chave**, como um documento compartilhado por link. Quem receber
-o link encaminhado também vê os nomes de exibição ("Ana S."); se um link
-vazar, "Desativar os links já enviados" troca o código. Links antigos, sem o
-código, continuam pedindo o código ao abrir.
+**O link leva a turma dentro dele**, depois do `#` (`#p=<turma>`) -- parte
+do endereço que o navegador não envia ao servidor. O site que serve o
+aplicativo (GitHub Pages) nunca vê nome de aluno. O pacote é compacto (texto
+com separadores, PIN numa etiqueta de 4 bytes; ver `Roster.fromCompact`):
+cerca de 210 caracteres para 3 alunos e 1.100 para 30, contra 800 e 4.200 do
+formato cifrado anterior.
+
+O link **não é cifrado, de propósito**: para quem o abre entrar sem digitar
+código, a chave teria de ir no próprio link, e aí a cifra não protegeria
+nada. Quem tiver o link -- inclusive um encaminhado para fora do grupo -- vê
+os nomes de exibição ("Ana S."), e um link enviado **não pode ser
+desativado**: ele leva a turma inteira e não consulta servidor nenhum. Nome
+completo, data de nascimento e sessões nunca vão no link. Links antigos,
+cifrados (`#t=`), continuam abrindo com o código.
 
 **Antes de usar com alunos de verdade**, o PIN fixo 1234 precisa voltar a ser
 sorteado: com todos iguais, uma criança entra no nome da colega

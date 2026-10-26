@@ -12,7 +12,7 @@ import 'comparison_chart.dart';
 import 'panel_widgets.dart';
 import 'teacher_controller.dart';
 
-/// Texto para o grupo das famílias. O link já leva o código da turma.
+/// Texto para o grupo das famílias. O link já leva a turma inteira.
 String parentsMessage(String className, String link) =>
     'Atividade de leitura do EyeLearn ($className).\n\n'
     'Abra o link no celular e deixe a criança escolher o nome e digitar o '
@@ -288,8 +288,8 @@ const _dueOptions = [3, 7, 14];
 /// A turma em três passos: atividade, alunos, link.
 ///
 /// O link vem por último porque leva dentro a lista de alunos e de
-/// atividades: um link gerado antes de cadastrar os alunos abriria uma turma
-/// vazia. Quando algo muda depois de gerado, o cartão do link avisa.
+/// atividades: um link copiado antes de cadastrar os alunos abriria uma turma
+/// vazia. Quando algo muda depois de copiado, o cartão do link avisa.
 class SetupTab extends StatefulWidget {
   final TeacherController controller;
   final VaultClass target;
@@ -304,9 +304,10 @@ class _SetupTabState extends State<SetupTab> {
   final _studentName = TextEditingController();
   final _studentFocus = FocusNode();
   int _dueDays = 7;
-  ShareLink? _link;
-  int? _linkRevision;
-  bool _sealing = false;
+
+  /// A versão do cofre quando o link foi copiado pela última vez; `null` se
+  /// ainda não foi.
+  int? _copiedRevision;
 
   TeacherController get controller => widget.controller;
   VaultClass get target => widget.target;
@@ -363,41 +364,9 @@ class _SetupTabState extends State<SetupTab> {
     await controller.change((v) => v.deleteStudent(target, student));
   }
 
-  Future<void> _generate() async {
-    setState(() => _sealing = true);
-    // Um quadro para o indicador aparecer: a chave do link leva um instante.
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    try {
-      final link = await controller.change((v) => v.shareLink(target,
-          baseUrl: controller.environment.appUrl,
-          now: controller.now,
-          includeCode: true));
-      if (mounted) {
-        setState(() {
-          _link = link;
-          _linkRevision = controller.revision;
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _sealing = false);
-    }
-  }
-
-  Future<void> _invalidate() async {
-    final ok = await confirmAction(
-      context,
-      title: 'Desativar os links já enviados?',
-      body: 'Os links mandados antes param de abrir. Use se um link foi parar '
-          'onde não devia; depois mande o link novo às famílias.',
-      action: 'Desativar',
-    );
-    if (!ok || !mounted) return;
-    await controller.change((v) => v.newAccessCode(target));
-    await _generate();
-  }
-
   void _copy(String text, String what) {
     Clipboard.setData(ClipboardData(text: text));
+    setState(() => _copiedRevision = controller.revision);
     showMessage(context, '$what copiado.');
   }
 
@@ -407,8 +376,15 @@ class _SetupTabState extends State<SetupTab> {
     final done = target.completedActivityCodes();
     final activities = target.sortedActivities;
     final students = target.sortedStudents;
-    final link = _link;
-    final stale = link != null && _linkRevision != controller.revision;
+    final ready = students.isNotEmpty && activities.isNotEmpty;
+    // O link se monta na hora, sempre com a turma como está: não há botão de
+    // gerar. Se algo mudou depois de copiado, o cartão avisa.
+    final link = ready
+        ? controller.vault.compactLink(target,
+            baseUrl: controller.environment.appUrl, now: now)
+        : null;
+    final stale =
+        _copiedRevision != null && _copiedRevision != controller.revision;
 
     return PanelBody(
       children: [
@@ -528,17 +504,17 @@ class _SetupTabState extends State<SetupTab> {
         _Step(
           number: 3,
           title: 'Link',
-          done: link != null && !stale,
+          done: _copiedRevision != null && !stale,
           children: [
             Text(
-              'Mande o link no grupo das famílias. Quem abre entra direto na '
+              'Copie e mande no grupo das famílias. Quem abre entra direto na '
               'turma, sem código.',
               style: AppType.body.copyWith(color: Palette.inkMuted),
             ),
             const SizedBox(height: 12),
-            if (students.isEmpty || activities.isEmpty)
+            if (link == null)
               const Text('Crie a atividade e cadastre os alunos antes.')
-            else if (link == null || stale) ...[
+            else ...[
               if (stale)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 10),
@@ -546,16 +522,10 @@ class _SetupTabState extends State<SetupTab> {
                     icon: Icons.sync_problem_rounded,
                     tint: Color(0xFF8A5300),
                     background: Palette.amberSoft,
-                    text: 'Você mudou alunos ou atividades: gere o link de '
-                        'novo e mande o novo às famílias.',
+                    text: 'Você mudou alunos ou atividades depois de copiar: '
+                        'copie o link de novo e mande o novo às famílias.',
                   ),
                 ),
-              PrimaryButton(
-                label: _sealing ? 'Gerando…' : 'Gerar o link',
-                icon: Icons.link_rounded,
-                onPressed: _sealing ? null : _generate,
-              ),
-            ] else ...[
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -563,7 +533,7 @@ class _SetupTabState extends State<SetupTab> {
                   borderRadius: BorderRadius.circular(Shapes.chipRadius),
                 ),
                 child: SelectableText(
-                  link.url,
+                  link,
                   key: const Key('class-link'),
                   maxLines: 3,
                   style: AppType.body.copyWith(fontSize: 13),
@@ -575,25 +545,17 @@ class _SetupTabState extends State<SetupTab> {
                 runSpacing: 10,
                 children: [
                   FilledButton.icon(
-                    onPressed: () => _copy(link.url, 'Link'),
+                    onPressed: () => _copy(link, 'Link'),
                     icon: const Icon(Icons.copy_rounded),
                     label: const Text('Copiar o link'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: () => _copy(
-                        parentsMessage(target.name, link.url), 'Mensagem'),
+                    onPressed: () =>
+                        _copy(parentsMessage(target.name, link), 'Mensagem'),
                     icon: const Icon(Icons.chat_outlined),
                     label: const Text('Copiar com mensagem'),
                   ),
                 ],
-              ),
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: _sealing ? null : _invalidate,
-                  child: const Text('Desativar os links já enviados'),
-                ),
               ),
             ],
           ],

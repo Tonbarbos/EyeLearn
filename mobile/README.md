@@ -17,13 +17,12 @@ painel, em PyQt6, continua em `eyelearn/panel`.
 
 ## Como a criança entra
 
-1. O professor manda no grupo das famílias o **link da turma**, gerado no
-   painel. O link já traz o código da turma.
-2. O responsável abre o link e a turma aparece, sem digitar nada. O pacote da
-   turma vai cifrado no próprio link, depois do `#`, e é aberto no aparelho
-   (`Roster.openLink`, AES-256-GCM com chave PBKDF2 do código, que vem no
-   mesmo fragmento: `Roster.codeOf`). O site que serve o aplicativo nunca
-   recebe esse pedaço do endereço. Links sem o código pedem o código.
+1. O professor manda no grupo das famílias o **link da turma**, copiado do
+   painel. O link leva a turma dentro dele.
+2. O responsável abre o link e a turma aparece, sem digitar nada. O pacote
+   compacto vai depois do `#` (`#p=`, `Roster.compactOf` e
+   `Roster.fromCompact`), e o site que serve o aplicativo nunca recebe esse
+   pedaço do endereço. Links antigos, cifrados (`#t=`), pedem o código.
 3. A criança toca no próprio nome e digita o PIN de quatro dígitos num teclado
    próprio, de teclas grandes.
 4. Aparecem as atividades dela: a fazer (com o prazo), feitas, a começar e
@@ -67,6 +66,9 @@ modesto, em vez dos 30 Hz do Android:
 
 - a calibração mede cada alvo pelo tempo de olhar parado nele, não por um
   número de quadros, e serve igual a 15 ou a 30 Hz (ver abaixo);
+- o site não instala service worker (`web/flutter_bootstrap.js`): com ele,
+  o navegador continuava servindo a versão anterior depois de cada
+  publicação;
 - o piso de qualidade da taxa de amostragem é 15 Hz, não 20: a curva de
   degradação sobre o ETDD70 mostra 82% no texto a 15 Hz com 1° de erro.
 
