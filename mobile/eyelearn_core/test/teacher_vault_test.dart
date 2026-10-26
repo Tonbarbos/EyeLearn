@@ -97,6 +97,30 @@ void main() {
       expect(a.accessCode, b.accessCode);
     });
 
+    test('com o código no link, o link sozinho abre a turma', () {
+      final (vault, target) = _exampleVault();
+      final link = vault.shareLink(target, includeCode: true);
+      final code = Roster.codeOf(link.url);
+      expect(code, normalizeClassCode(link.accessCode));
+      expect(Roster.openLink(link.url, code!).className, target.name);
+      // Sem o código no link, nada muda.
+      expect(Roster.codeOf(vault.shareLink(target).url), isNull);
+    });
+
+    test('PIN de teste 1234 só com as regras desligadas', () {
+      final vault = TeacherVault.create('prof', 'Prof. Ana');
+      final turma = vault.createClass('5º A');
+      expect(() => vault.addStudent(turma, 'Ana', pin: debugStudentPin),
+          throwsA(isA<VaultError>()));
+      final ana = vault.addStudent(turma, 'Ana',
+          pin: debugStudentPin, enforcePinRules: false);
+      expect(verifyPin('1234', ana.student.pinHash), isTrue);
+      expect(
+          () => vault.addStudent(turma, 'Bia',
+              pin: '12a4', enforcePinRules: false),
+          throwsA(isA<VaultError>()));
+    });
+
     test('trocar o código faz o link antigo parar de abrir', () {
       final (vault, target) = _exampleVault();
       final old = vault.shareLink(target);

@@ -37,10 +37,7 @@ class _TeacherGateState extends State<TeacherGate> {
   VaultEnvelope? _backup;
 
   final _name = TextEditingController();
-  final _username = TextEditingController();
   final _password = TextEditingController();
-  final _confirm = TextEditingController();
-  bool _understood = false;
   bool _busy = false;
   String? _error;
 
@@ -54,7 +51,7 @@ class _TeacherGateState extends State<TeacherGate> {
 
   @override
   void dispose() {
-    for (final c in [_name, _username, _password, _confirm]) {
+    for (final c in [_name, _password]) {
       c.dispose();
     }
     super.dispose();
@@ -82,7 +79,6 @@ class _TeacherGateState extends State<TeacherGate> {
         _mode = mode;
         _error = null;
         _password.clear();
-        _confirm.clear();
       });
 
   Future<void> _run(Future<TeacherController> Function() open) async {
@@ -107,18 +103,14 @@ class _TeacherGateState extends State<TeacherGate> {
     }
   }
 
-  void _create() {
-    if (_password.text != _confirm.text) {
-      setState(() => _error = 'As duas senhas não são iguais.');
-      return;
-    }
-    _run(() => TeacherController.create(
-          env,
-          username: _username.text,
-          name: _name.text,
-          password: _password.text,
-        ));
-  }
+  /// Só nome e senha: o usuário sai do nome, e é só o rótulo do cofre neste
+  /// navegador e no nome do arquivo da cópia de segurança.
+  void _create() => _run(() => TeacherController.create(
+        env,
+        username: usernameFrom(_name.text),
+        name: _name.text,
+        password: _password.text,
+      ));
 
   void _unlock() => _run(() => TeacherController.unlock(
         env,
@@ -241,36 +233,23 @@ class _TeacherGateState extends State<TeacherGate> {
         _Mode.create => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              panelField(_name, 'Seu nome', Icons.person_outline_rounded),
-              const SizedBox(height: 12),
-              panelField(_username, 'Usuário', Icons.badge_outlined),
+              panelField(_name, 'Seu nome', Icons.person_outline_rounded,
+                  autofocus: true),
               const SizedBox(height: 12),
               panelField(_password, 'Senha (8 caracteres ou mais)',
                   Icons.lock_outline_rounded,
-                  obscure: true),
-              const SizedBox(height: 12),
-              panelField(_confirm, 'Repita a senha', Icons.lock_outline_rounded,
                   obscure: true, onSubmitted: (_) => _create()),
-              const SizedBox(height: 14),
-              const NoticeCard(
-                icon: Icons.warning_amber_rounded,
-                tint: Color(0xFF8A5300),
-                background: Palette.amberSoft,
-                text: 'Não há como recuperar a senha: ninguém além de você a '
-                    'conhece, nem o EyeLearn. Se esquecê-la, os dados dos '
-                    'alunos ficam ilegíveis, inclusive na cópia de segurança.',
+              const SizedBox(height: 10),
+              Text(
+                'Anote a senha: não há como recuperá-la, e sem ela os dados '
+                'dos alunos ficam ilegíveis.',
+                style: AppType.body
+                    .copyWith(fontSize: 14, color: const Color(0xFF8A5300)),
               ),
-              CheckboxListTile(
-                value: _understood,
-                onChanged: (v) => setState(() => _understood = v ?? false),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('Entendi e anotei a senha num lugar seguro'),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               PrimaryButton(
                 label: _busy ? 'Criando…' : 'Criar',
-                onPressed: _busy || !_understood ? null : _create,
+                onPressed: _busy ? null : _create,
               ),
             ],
           ),
@@ -326,6 +305,24 @@ class _TeacherGateState extends State<TeacherGate> {
       };
 }
 
+/// Usuário a partir do nome: minúsculas, sem acento nem espaço.
+String usernameFrom(String name) {
+  const from = 'áàâãäéèêëíìîïóòôõöúùûüçñ';
+  const to = 'aaaaaeeeeiiiiooooouuuucn';
+  final buffer = StringBuffer();
+  for (final ch in name.trim().toLowerCase().split('')) {
+    final i = from.indexOf(ch);
+    final c = i >= 0 ? to[i] : ch;
+    if (RegExp('[a-z0-9]').hasMatch(c)) {
+      buffer.write(c);
+    } else if (buffer.isNotEmpty && !buffer.toString().endsWith('-')) {
+      buffer.write('-');
+    }
+  }
+  final slug = buffer.toString().replaceAll(RegExp(r'-+$'), '');
+  return slug.isEmpty ? 'professor' : slug;
+}
+
 /// As turmas do professor.
 class TeacherHomeScreen extends StatelessWidget {
   final TeacherController controller;
@@ -334,8 +331,6 @@ class TeacherHomeScreen extends StatelessWidget {
 
   Future<void> _newClass(BuildContext context) async {
     final name = TextEditingController();
-    final school = TextEditingController();
-    final grade = TextEditingController();
     final created = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -347,11 +342,8 @@ class TeacherHomeScreen extends StatelessWidget {
             children: [
               panelField(
                   name, 'Nome da turma (ex.: 5º A)', Icons.groups_outlined,
-                  autofocus: true),
-              const SizedBox(height: 12),
-              panelField(school, 'Escola (opcional)', Icons.school_outlined),
-              const SizedBox(height: 12),
-              panelField(grade, 'Ano (opcional)', Icons.stairs_outlined),
+                  autofocus: true,
+                  onSubmitted: (_) => Navigator.pop(context, true)),
             ],
           ),
         ),
@@ -369,8 +361,7 @@ class TeacherHomeScreen extends StatelessWidget {
     );
     if (created != true || !context.mounted) return;
     await guard(context, () async {
-      final target = await controller.change((v) =>
-          v.createClass(name.text, school: school.text, grade: grade.text));
+      final target = await controller.change((v) => v.createClass(name.text));
       if (context.mounted) _open(context, target);
     });
   }

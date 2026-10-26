@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:eyelearn_app/src/homework_app.dart';
 import 'package:eyelearn_app/src/gaze/synthetic_gaze_source.dart';
@@ -11,6 +10,7 @@ import 'package:eyelearn_app/src/teacher/teacher_platform.dart';
 import 'package:eyelearn_app/src/teacher/teacher_screens.dart';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Sessões de exemplo, com a comparação que o Python calculou para elas
@@ -93,61 +93,80 @@ Future<MemoryVaultStorage> _storedVault() async {
 }
 
 void main() {
-  testWidgets('criar o painel, a turma, os alunos, a atividade e o link',
+  testWidgets('turma, atividade, alunos e link, em poucos toques',
       (tester) async {
     final platform = _FakePlatform();
     final storage = MemoryVaultStorage();
     await _pump(tester, TeacherGate(environment: _teacher(platform, storage)));
 
+    // Criar o painel: só nome e senha.
     await _tap(tester, find.text('Criar o painel'));
     final fields = find.byType(TextField);
+    expect(fields, findsNWidgets(2));
     await tester.enterText(fields.at(0), 'Ana Professora');
-    await tester.enterText(fields.at(1), 'ana');
-    await tester.enterText(fields.at(2), _password);
-    await tester.enterText(fields.at(3), _password);
-    await _tap(tester, find.byType(CheckboxListTile));
+    await tester.enterText(fields.at(1), _password);
     await _tap(tester, find.text('Criar'));
     expect(find.text('Turmas de Ana Professora'), findsOneWidget);
     // Nada em claro no armazenamento.
     expect(storage.envelope, isNot(contains('Ana Professora')));
+    expect(VaultEnvelope.parse(storage.envelope!).username, 'ana-professora');
     // Nunca baixou cópia: o painel lembra.
     expect(find.textContaining('Baixe uma cópia de segurança'), findsOneWidget);
 
+    // 1. Turma: só o nome.
     await _tap(tester, find.text('Nova turma'));
     await tester.enterText(find.byType(TextField).first, '5º B');
     await _tap(tester, find.text('Criar'));
-    expect(find.text('Leitura da turma'), findsOneWidget);
+    expect(find.text('Turma'), findsOneWidget);
+    expect(find.text('Crie a atividade e cadastre os alunos antes.'),
+        findsOneWidget);
 
-    await _tap(tester, find.text('Alunos'));
-    await _tap(tester, find.text('Adicionar alunos').last);
-    await tester.enterText(find.byType(TextField).last,
-        'Ana Luiza Souza\nBruno Lima\n\nana luiza souza');
-    await _tap(tester, find.text('Adicionar'));
-    expect(find.text('Anote os PINs'), findsOneWidget);
-    expect(find.textContaining('Já há'), findsOneWidget);
-    await _tap(tester, find.text('Anotei'));
-    expect(find.text('2 alunos'), findsOneWidget);
+    // 2. Atividade: um toque.
+    await _tap(tester, find.text('Texto (uma história)'));
+    expect(find.textContaining('entregue por 0 de 0'), findsOneWidget);
+    expect(find.textContaining('até 28/10'), findsOneWidget);
 
-    await _tap(tester, find.text('Atividades e link'));
-    await _tap(tester, find.text('Nova atividade'));
-    await _tap(tester, find.text('Criar'));
-    expect(find.text('Texto (uma história)'), findsOneWidget);
-    expect(find.textContaining('entregue por 0 de 2'), findsOneWidget);
+    // 3. Alunos: nome e Enter, PIN 1234 para todos.
+    final name = find.widgetWithText(TextField, 'Nome do aluno');
+    for (final student in ['Ana Luiza Souza', 'Bruno Lima']) {
+      await tester.enterText(name, student);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await _settle(tester);
+    }
+    expect(find.text('Ana Luiza Souza'), findsOneWidget);
+    expect(find.text('Bruno Lima'), findsOneWidget);
+    expect(
+        find.textContaining('PIN de todos os alunos é 1234'), findsOneWidget);
 
+    // 4. Link: com o código dentro.
     await _tap(tester, find.text('Gerar o link'));
-    final message =
-        tester.widget<SelectableText>(find.byType(SelectableText).first).data!;
-    final url = message.split('\n').last;
-    final code =
-        tester.widget<SelectableText>(find.byType(SelectableText).last).data!;
+    final url = tester
+        .widget<SelectableText>(find.byKey(const Key('class-link')))
+        .data!;
     expect(url, startsWith('$defaultAppUrl#t='));
-    expect(code, matches(RegExp(r'^[A-Z0-9]{4}-[A-Z0-9]{4}$')));
+    final code = Roster.codeOf(url);
+    expect(code, isNotNull);
 
-    // O aplicativo do aluno abre o link com o código.
-    final roster = Roster.openLink(url, code);
+    // O aplicativo do aluno abre o link sozinho, e o PIN 1234 entra.
+    final roster = Roster.openLink(url, code!);
     expect(roster.className, '5º B');
     expect(roster.students.map((s) => s.displayName), ['Ana S.', 'Bruno L.']);
+    expect(roster.students.first.checkPin('1234'), isTrue);
     expect(roster.activities.single.task, 'text');
+
+    // Mudou a turma depois do link: o painel avisa que o link ficou velho.
+    await tester.enterText(name, 'Carla Dias');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+    expect(find.textContaining('gere o link de novo'), findsOneWidget);
+    await _tap(tester, find.text('Gerar o link'));
+    final fresh = tester
+        .widget<SelectableText>(find.byKey(const Key('class-link')))
+        .data!;
+    expect(
+        Roster.openLink(fresh, Roster.codeOf(fresh)!).students, hasLength(3));
+    // O código não mudou: o link velho continua abrindo (sem a Carla).
+    expect(Roster.codeOf(fresh), code);
 
     // Fechar e abrir: o cofre volta com a senha.
     await tester.pumpWidget(const SizedBox());
@@ -157,7 +176,7 @@ void main() {
     await _tap(tester, find.text('Entrar'));
     expect(find.text('5º B'), findsOneWidget);
     expect(
-        find.textContaining('2 alunos · 1 atividade aberta'), findsOneWidget);
+        find.textContaining('3 alunos · 1 atividade aberta'), findsOneWidget);
   });
 
   testWidgets('senha errada não abre', (tester) async {
@@ -177,6 +196,7 @@ void main() {
     await tester.enterText(find.byType(TextField), _password);
     await _tap(tester, find.text('Entrar'));
     await _tap(tester, find.text('5º A'));
+    await _tap(tester, find.text('Leitura da turma'));
 
     expect(find.textContaining('Ainda não há gravação'), findsOneWidget);
 
@@ -291,5 +311,31 @@ void main() {
     ));
     await _settle(tester);
     expect(find.text('Criar o painel'), findsOneWidget);
+  });
+
+  testWidgets('o link com o código entra direto na turma', (tester) async {
+    final vault = TeacherVault.create('prof', 'Prof. Ana');
+    final turma = vault.createClass('5º C');
+    vault.addStudent(turma, 'Ana Souza',
+        pin: debugStudentPin, enforcePinRules: false);
+    final link = vault.shareLink(turma, includeCode: true);
+    final storage = MemoryClassStorage();
+
+    await tester.binding.setSurfaceSize(const Size(420, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(HomeworkApp(
+      environment: HomeworkEnvironment(
+        models: const {},
+        gaze: SyntheticGazeSource.new,
+        storage: storage,
+        clock: () => _today,
+        initialLink: link.url,
+      ),
+    ));
+    await _settle(tester);
+    expect(find.text('Código da turma'), findsNothing);
+    expect(find.text('Quem vai ler hoje?'), findsOneWidget);
+    expect(find.text('5º C'.toUpperCase()), findsOneWidget);
+    expect((await storage.load())!.code, normalizeClassCode(link.accessCode));
   });
 }

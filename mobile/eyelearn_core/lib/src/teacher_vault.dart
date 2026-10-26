@@ -37,6 +37,10 @@ const recentlyClosedDays = 14;
 /// Onde o link da turma abre.
 const defaultAppUrl = 'https://tonbarbos.github.io/EyeLearn/';
 
+/// PIN de todos os alunos no modo de teste do painel. Fura de propósito as
+/// regras de [checkPin] (é uma sequência): é para testar sem anotar PINs.
+const debugStudentPin = '1234';
+
 /// Iterações do PBKDF2 do PIN, como `PIN_ITERATIONS` do Python.
 const pinIterations = 20000;
 
@@ -467,12 +471,14 @@ class TeacherVault {
 
   // -- alunos ----------------------------------------------------------------
 
-  /// Cadastra o aluno. Sem [pin], sorteia um.
+  /// Cadastra o aluno. Sem [pin], sorteia um. Com [enforcePinRules] falso,
+  /// aceita qualquer PIN de quatro dígitos (o [debugStudentPin]).
   NewStudent addStudent(
     VaultClass target,
     String fullName, {
     String? birthDate,
     String? pin,
+    bool enforcePinRules = true,
   }) {
     final name = _collapse(fullName);
     if (name.isEmpty) throw const VaultError('o nome do aluno é obrigatório');
@@ -481,7 +487,7 @@ class TeacherVault {
       throw VaultError('já há "$name" nesta turma');
     }
     final chosen = pin ?? generatePin();
-    checkPin(chosen);
+    _checkPin(chosen, enforcePinRules);
     final taken = {
       for (final c in classes)
         for (final s in c.students) s.code,
@@ -501,9 +507,13 @@ class TeacherVault {
   }
 
   /// Troca o PIN e devolve o novo, em claro, uma vez.
-  String resetPin(VaultStudent student, {String? pin}) {
+  String resetPin(
+    VaultStudent student, {
+    String? pin,
+    bool enforcePinRules = true,
+  }) {
     final chosen = pin ?? generatePin();
-    checkPin(chosen);
+    _checkPin(chosen, enforcePinRules);
     student.pinHash = hashPin(chosen);
     return chosen;
   }
@@ -607,19 +617,22 @@ class TeacherVault {
 
   /// Link e código para mandar às famílias. O link muda a cada pedido (sal e
   /// nonce novos) e precisa ser mandado de novo quando a turma ou as
-  /// atividades mudam; o código fica o mesmo.
+  /// atividades mudam; o código fica o mesmo. Com [includeCode], o código vai
+  /// no próprio link (ver [Roster.codeOf]) e quem abre entra direto.
   ShareLink shareLink(
     VaultClass target, {
     String baseUrl = defaultAppUrl,
     DateTime? now,
     Uint8List? salt,
     Uint8List? nonce,
+    bool includeCode = false,
   }) {
     final code = accessCode(target);
     final sealed = sealClassPackage(classPackage(target, now: now), code,
         salt: salt, nonce: nonce);
+    final withCode = includeCode ? '&$packageCodeKey=$code' : '';
     return ShareLink(
-      '${baseUrl.split('#').first}#$packageFragmentKey=$sealed',
+      '${baseUrl.split('#').first}#$packageFragmentKey=$sealed$withCode',
       formatClassCode(code),
     );
   }
@@ -679,6 +692,14 @@ class TeacherVault {
       }
     }
     return report;
+  }
+}
+
+void _checkPin(String pin, bool enforceRules) {
+  if (enforceRules) {
+    checkPin(pin);
+  } else if (!RegExp(r'^[0-9]{4}$').hasMatch(pin)) {
+    throw const VaultError('o PIN precisa ter exatamente $pinLength dígitos');
   }
 }
 

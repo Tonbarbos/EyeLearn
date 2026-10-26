@@ -161,20 +161,21 @@ python scripts/build_mobile_assets.py --check      # ativos em dia
 ## Painel do professor
 
 Abra **https://tonbarbos.github.io/EyeLearn/#professor** no computador. Na
-primeira vez, o painel pede seu nome, um usuário e uma senha. Depois:
+primeira vez, o painel pede seu nome e uma senha. Depois, numa tela só:
 
-1. **Nova turma**, e em **Alunos** cadastre as crianças (um nome por linha).
-   Cada uma recebe um código e um PIN de 4 dígitos, mostrado uma vez; o painel
-   deixa copiar a lista para imprimir os bilhetes.
-2. Em **Atividades e link**, crie o dever de casa (leitura, dia de início e
-   prazo) e copie a mensagem com o link para o grupo das famílias. O código
-   da turma vai à parte (bilhete na agenda ou outra mensagem).
-3. Em casa, o responsável abre o link e digita o código uma vez; a criança
-   escolhe o nome, digita o PIN e vê as atividades pendentes.
-4. As sessões voltam como arquivos (WhatsApp, e-mail). Salve-os no
+1. **Nova turma**: só o nome.
+2. **Atividade**: um toque na leitura (sílabas, texto ou palavras
+   inventadas). Abre hoje; o prazo é de 3, 7 ou 14 dias.
+3. **Alunos**: digite o nome e Enter. Por enquanto, em **modo de teste**,
+   todos os alunos têm o PIN **1234**.
+4. **Link**: "Gerar o link" e "Copiar o link", para o grupo das famílias.
+   Quem abre o link entra direto na turma; a criança escolhe o nome e digita
+   o PIN. Se a turma mudar depois (aluno ou atividade novos), o painel avisa
+   que o link ficou velho.
+5. As sessões voltam como arquivos (WhatsApp, e-mail). Salve-os no
    computador e importe todos de uma vez em **Sessões**. A lista de
    atividades mostra quantos alunos já entregaram cada uma.
-5. Em **Leitura da turma**, cada criança aparece comparada com a turma, por
+6. Em **Leitura da turma**, cada criança aparece comparada com a turma, por
    característica, com as sugestões de adaptação.
 
 **Onde ficam os dados.** Não há servidor nem conta online. Tudo do professor
@@ -194,9 +195,16 @@ Duas consequências que o painel explica antes de criar o cofre:
 **O link leva a turma cifrada**, depois do `#` -- parte do endereço que o
 navegador não envia ao servidor. O site que serve o aplicativo (GitHub Pages)
 nunca vê nome de aluno. A cifra é AES-256-GCM com chave derivada do código da
-turma: um link encaminhado para fora do grupo, sem o código, não abre. O link
-muda quando o professor cria atividade ou mexe nos alunos e precisa ser
-mandado de novo; o código continua o mesmo, e o aplicativo o lembra.
+turma, e o painel põe o código no próprio link (`#t=<turma>&c=<código>`):
+**o link é a chave**, como um documento compartilhado por link. Quem receber
+o link encaminhado também vê os nomes de exibição ("Ana S."); se um link
+vazar, "Desativar os links já enviados" troca o código. Links antigos, sem o
+código, continuam pedindo o código ao abrir.
+
+**Antes de usar com alunos de verdade**, o PIN fixo 1234 precisa voltar a ser
+sorteado: com todos iguais, uma criança entra no nome da colega
+(`debugStudentPin` em `teacher_vault.dart` e o passo "Alunos" em
+`lib/src/teacher/class_screen.dart`).
 
 O painel é a porta em Dart do painel Python. Os testes conferem os dois lados
 contra os mesmos arquivos: o link gerado no navegador sai igual, byte a byte,

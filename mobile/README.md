@@ -17,12 +17,13 @@ painel, em PyQt6, continua em `eyelearn/panel`.
 
 ## Como a criança entra
 
-1. O professor manda no grupo das famílias o **link da turma** e, à parte, o
-   **código da turma** (ver "Atividades e link" no painel).
-2. O responsável abre o link e digita o código, uma vez. O pacote da turma vai
-   cifrado no próprio link, depois do `#`, e é aberto no aparelho
-   (`Roster.openLink`, AES-256-GCM com chave PBKDF2 do código). O site que
-   serve o aplicativo nunca recebe esse pedaço do endereço.
+1. O professor manda no grupo das famílias o **link da turma**, gerado no
+   painel. O link já traz o código da turma.
+2. O responsável abre o link e a turma aparece, sem digitar nada. O pacote da
+   turma vai cifrado no próprio link, depois do `#`, e é aberto no aparelho
+   (`Roster.openLink`, AES-256-GCM com chave PBKDF2 do código, que vem no
+   mesmo fragmento: `Roster.codeOf`). O site que serve o aplicativo nunca
+   recebe esse pedaço do endereço. Links sem o código pedem o código.
 3. A criança toca no próprio nome e digita o PIN de quatro dígitos num teclado
    próprio, de teclas grandes.
 4. Aparecem as atividades dela: a fazer (com o prazo), feitas, a começar e
@@ -64,10 +65,25 @@ baixa uns 35 MB ao todo, que ficam em cache.
 Ajustes para o navegador, onde o MediaPipe pode rodar a 15 Hz num celular
 modesto, em vez dos 30 Hz do Android:
 
-- a calibração estende a janela de medida de cada alvo até 1,2 s quando
-  chegam poucos quadros, em vez de reprovar o alvo;
+- a calibração mede cada alvo pelo tempo de olhar parado nele, não por um
+  número de quadros, e serve igual a 15 ou a 30 Hz (ver abaixo);
 - o piso de qualidade da taxa de amostragem é 15 Hz, não 20: a curva de
   degradação sobre o ETDD70 mostra 82% no texto a 15 Hz com 1° de erro.
+
+## Calibração por permanência
+
+Como o botão do Kinect, em que se segura a mão parada até confirmar: cada um
+dos nove alvos é um anel que **enche enquanto o olhar fica parado nele** (1,5
+s) e esvazia se o olhar sai, os olhos piscam ou o rosto some. A medida do alvo
+é a média só desses quadros, o que tira da conta as olhadas para o lado e as
+sacadas atrasadas que a calibração antiga, de tempo fixo, misturava.
+
+Desde o primeiro alvo confirmado aparece um **cursor** onde o aparelho acha
+que se está olhando, com um mapa provisório que melhora a cada alvo. A partir
+do segundo alvo, olhar parado longe do alvo (mais de 8°) não enche. Se um
+alvo passa de 6 s sem confirmar, o raio dobra e a exigência de estabilidade
+afrouxa um pouco, para ninguém ficar preso. A regra está em
+`eyelearn_core/lib/src/dwell_calibration.dart`, testada sem tela.
 
 ## Testar o olhar
 
