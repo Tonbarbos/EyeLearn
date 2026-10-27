@@ -6,16 +6,36 @@ Projeto acadêmico do curso de Ciência da Computação do Centro Universitário
 
 > **Este sistema não faz diagnóstico.** Ele descreve o padrão de leitura observado e sugere adaptações pedagógicas ao professor. Qualquer avaliação clínica é responsabilidade de profissional habilitado.
 
-## O que faz
+## Como usar
+
+Não precisa instalar nada: o EyeLearn é um site.
+
+| Quem | Onde |
+|---|---|
+| **Professor** | **https://tonbarbos.github.io/EyeLearn/#professor**, no computador |
+| **Aluno** | pelo link da turma que o professor manda, no celular (iPhone ou Android) |
+| **Testar a câmera e o olhar** | **https://tonbarbos.github.io/EyeLearn/#olhar** |
 
 A atividade é **dever de casa** (celular não entra na escola):
 
-1. O professor cria as atividades no painel e manda às famílias um link e um código de turma.
-2. Em casa, a criança abre o link no celular (iPhone ou Android, pelo navegador), escolhe o nome, digita o PIN e lê enquanto a câmera frontal acompanha o olhar.
-3. O aparelho extrai as características do percurso do olhar (fixações, sacadas, regressões) e o responsável envia o arquivo da sessão ao professor.
-4. O professor importa as sessões e vê, no painel, cada criança comparada com a turma.
+1. O professor abre o painel, cria a turma, a atividade e os alunos, e copia
+   o **link da turma** para o grupo das famílias.
+2. Em casa, a criança abre o link no celular, toca no próprio nome, digita o
+   PIN, olha para as bolinhas da calibração e lê. A leitura começa sozinha.
+3. O celular mede o percurso do olhar (fixações, sacadas, regressões) e
+   **envia a sessão sozinho ao professor**, cifrada para ele.
+4. O professor abre a turma no painel: as sessões chegam sozinhas, e cada
+   criança aparece comparada com a turma ou com a base ETDD70, com o mapa de
+   onde o olhar ficou.
 
 A criança não vê resultado nenhum: o aplicativo diz que ela terminou, e é tudo.
+
+No primeiro acesso o navegador baixa cerca de 35 MB (o aplicativo, o MediaPipe
+e o modelo do rosto), que ficam em cache: vale abrir o link no Wi-Fi. A câmera
+funciona melhor com boa luz de frente para o rosto e o celular apoiado.
+
+O passo a passo do painel está em [Painel do professor](#painel-do-professor).
+O resto deste documento é para quem quer entender ou mexer no código.
 
 ## Bases de dados
 
@@ -51,19 +71,10 @@ python scripts/run_etdd70.py --etdd70 PASTA_DO_DATA_ZIP --labels dyslexia_class_
 | Painel do professor | navegador do computador, no mesmo site | Flutter web; dados cifrados no próprio navegador |
 | Treino e experimentos | computador | Python, scikit-learn |
 
-O aplicativo do aluno fica publicado em **https://tonbarbos.github.io/EyeLearn/**
-(GitHub Pages, por `.github/workflows/pages.yml`, a cada envio à `main`). É só
-um site estático: **não há servidor com dado de turma**. A turma chega no
-link, e a sessão vai do celular ao painel como um arquivo JSON, pelo
-compartilhar do sistema.
-
-O painel do professor está no mesmo endereço, em
-**https://tonbarbos.github.io/EyeLearn/#professor** (ou pelo botão "Sou
-professor" na tela de entrada).
-
-No primeiro acesso o navegador baixa cerca de 35 MB (o aplicativo, o MediaPipe
-e o modelo do rosto), que ficam em cache. Vale avisar as famílias para abrir
-o link no Wi-Fi.
+O site é publicado no GitHub Pages por `.github/workflows/pages.yml`, a cada
+envio à `main`. É estático: a turma vai dentro do link, e a sessão vai do
+celular ao painel por uma caixa de entrega no Supabase, cifrada para o
+professor (ver [Envio automático](#envio-automático-a-caixa-de-entrega-supabase)).
 
 ## Estrutura
 
@@ -94,7 +105,11 @@ relatorio/                     relatório do Projeto Integrador IV
 
 O aplicativo tem documentação própria em [`mobile/README.md`](mobile/README.md).
 
-## Como rodar
+## Para desenvolver: rodar o código
+
+Só é preciso para treinar os modelos, rodar os experimentos ou mexer no
+aplicativo. Para usar o EyeLearn, veja [Como usar](#como-usar).
+
 
 ```bash
 python -m pip install -e ".[test]"
