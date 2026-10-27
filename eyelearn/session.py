@@ -33,11 +33,11 @@ SESSION_FORMAT_VERSION = 1
 
 #: Pisos de qualidade, iguais aos do aplicativo.
 MIN_VALID_RATIO = 0.75
-#: 15 Hz, e não 20: o aplicativo roda também no navegador, onde o MediaPipe
-#: num celular modesto entrega de 15 a 25 quadros por segundo. A curva de
-#: degradação sobre o ETDD70 mostra que 15 Hz com 1° de erro ainda dá 82% no
-#: texto (relatorio/BASES-DE-DADOS.md); abaixo de 15 Hz não há medida.
-MIN_SAMPLING_RATE_HZ = 15.0
+#: 10 Hz. A primeira sessão num celular real, no navegador, saiu a 11 Hz, e
+#: o piso anterior (15 Hz) a marcava como inútil. Medido no ETDD70 com 2° de
+#: ruído, 10 Hz dá o mesmo que 30 Hz: 80% no texto e 81% nas sílabas, contra
+#: 80% e 79% (relatorio/BASES-DE-DADOS.md). Abaixo de 10 Hz não há medida.
+MIN_SAMPLING_RATE_HZ = 10.0
 
 
 @dataclass(frozen=True)

@@ -945,7 +945,8 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
     });
   }
 
-  Future<void> _finished(GazeTrace trace, RecordingQuality quality) async {
+  Future<void> _finished(
+      GazeTrace trace, RecordingQuality quality, List<double>? textArea) async {
     final analysis = analyse(trace, widget.model.preprocessing);
     final exported = exportSession(
       participantCode: widget.student.code,
@@ -956,6 +957,7 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
       quality: quality,
       features: analysis.features,
       artifact: widget.model,
+      heatmap: GazeHeatmap.fromTrace(trace, textArea: textArea),
     );
     // Conta como feita só se a captura serviu: uma gravação ruim fica
     // pendente, e a tela final sugere repetir.

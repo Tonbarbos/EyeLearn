@@ -35,6 +35,7 @@ ExportedSession exportSession({
   required RecordingQuality quality,
   required Map<String, double> features,
   required ModelArtifact artifact,
+  GazeHeatmap? heatmap,
 }) {
   final session = Session.fromAnalysis(
     participantCode: participantCode,
@@ -46,6 +47,7 @@ ExportedSession exportSession({
     validSampleRatio: quality.validRatio,
     features: features,
     artifact: artifact,
+    heatmap: heatmap,
   );
   return ExportedSession(
     session: session,

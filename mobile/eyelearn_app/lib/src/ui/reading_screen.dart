@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
+import 'calibration_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -26,8 +27,12 @@ class ReadingScreen extends StatefulWidget {
   final GazeCalibration calibration;
   final Passage passage;
 
-  /// Chamada ao final, com o percurso e a qualidade da captura.
-  final void Function(GazeTrace trace, RecordingQuality quality) onFinished;
+  /// Chamada ao final, com o percurso, a qualidade da captura e onde o texto
+  /// ficou na tela, em graus (esquerda, topo, direita, base) -- para o mapa
+  /// de calor mostrar as linhas sob o olhar.
+  final void Function(
+          GazeTrace trace, RecordingQuality quality, List<double>? textArea)
+      onFinished;
 
   /// Chamada quando a captura começa.
   ///
@@ -57,6 +62,35 @@ class _ReadingScreenState extends State<ReadingScreen> {
   bool _capturing = false;
   String? _warning;
   String? _error;
+
+  final _textKey = GlobalKey();
+
+  /// O retângulo do texto em graus, na mesma conversão da calibração: a
+  /// tela inteira, dentro da área segura, vale ±meia-largura e ±meia-altura.
+  List<double>? _textArea() {
+    final box = _textKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    final media = MediaQuery.of(context);
+    final safe = media.padding;
+    final width = media.size.width - safe.horizontal;
+    final height = media.size.height - safe.vertical;
+    if (width <= 0 || height <= 0) return null;
+    final topLeft = box.localToGlobal(Offset.zero);
+    double dx(double px) =>
+        ((px - safe.left) / width - 0.5) *
+        2 *
+        CalibrationScreen.degreesPerHalfWidth;
+    double dy(double px) =>
+        ((px - safe.top) / height - 0.5) *
+        2 *
+        CalibrationScreen.degreesPerHalfHeight;
+    return [
+      dx(topLeft.dx),
+      dy(topLeft.dy),
+      dx(topLeft.dx + box.size.width),
+      dy(topLeft.dy + box.size.height),
+    ];
+  }
 
   /// Segundos que faltam para a leitura começar sozinha; `0` depois.
   ///
@@ -144,7 +178,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
     await widget.channel.stop();
 
     setState(() => _capturing = false);
-    widget.onFinished(_recorder.build(), _recorder.quality());
+    widget.onFinished(_recorder.build(), _recorder.quality(), _textArea());
   }
 
   @override
@@ -169,7 +203,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                 padding: const EdgeInsets.symmetric(
                   horizontal: ReadingScreenBody.horizontalPadding,
                 ),
-                child: ReadingScreenBody(passage: passage),
+                child: ReadingScreenBody(key: _textKey, passage: passage),
               ),
             ),
 

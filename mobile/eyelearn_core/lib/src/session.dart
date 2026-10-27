@@ -16,6 +16,7 @@ library;
 import 'dart:convert';
 
 import 'features.dart';
+import 'gaze_heatmap.dart';
 import 'model.dart';
 
 /// Versão do formato de sessão.
@@ -63,6 +64,9 @@ class Session {
   /// Procedência do modelo que produziu [score].
   final Map<String, dynamic> modelMetadata;
 
+  /// Onde o olhar ficou, numa grade grossa; `null` em sessão antiga.
+  final GazeHeatmap? heatmap;
+
   const Session({
     required this.participantCode,
     required this.task,
@@ -74,6 +78,7 @@ class Session {
     required this.score,
     required this.modelMetadata,
     this.activityCode,
+    this.heatmap,
   });
 
   /// Monta a sessão a partir da análise e do artefato usado.
@@ -87,6 +92,7 @@ class Session {
     required Map<String, double> features,
     required ModelArtifact artifact,
     String? activityCode,
+    GazeHeatmap? heatmap,
   }) =>
       Session(
         participantCode: participantCode,
@@ -103,6 +109,7 @@ class Session {
           'feature_names': artifact.featureNames,
           ...artifact.metadata,
         },
+        heatmap: heatmap,
       );
 
   /// Se a gravação tem qualidade suficiente para ser interpretada.
@@ -113,7 +120,7 @@ class Session {
   bool hasUsableQuality({
     double minValidRatio = 0.75,
     // Igual a MIN_SAMPLING_RATE_HZ em eyelearn/session.py; ver a nota lá.
-    double minSamplingRateHz = 15.0,
+    double minSamplingRateHz = 10.0,
   }) =>
       validSampleRatio >= minValidRatio && samplingRateHz >= minSamplingRateHz;
 
@@ -131,6 +138,7 @@ class Session {
         },
         'score': score,
         'model': modelMetadata,
+        if (heatmap != null) 'heatmap': heatmap!.toJson(),
       };
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());
@@ -159,6 +167,9 @@ class Session {
       },
       score: (json['score'] as num).toDouble(),
       modelMetadata: (json['model'] as Map<String, dynamic>?) ?? const {},
+      heatmap: json['heatmap'] == null
+          ? null
+          : GazeHeatmap.fromJson(json['heatmap'] as Map<String, dynamic>),
     );
   }
 

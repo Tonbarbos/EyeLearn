@@ -98,6 +98,23 @@ Leitura:
    olhar (Valliappan et al., 2020) -- recupera parte da perda. Esse é o
    trabalho futuro mais promissor do aplicativo.
 
+**E abaixo de 15 Hz?** A primeira sessão num celular real, pelo navegador,
+saiu a 11 Hz. Medido de novo no ETDD70 (regressão logística, 5 x 3
+partições, 2° de ruído), a taxa quase não pesa até 10 Hz:
+
+| Nível | Texto | Sílabas |
+|---|---|---|
+| 30 Hz + 2° | 79,5% | 78,6% |
+| 20 Hz + 2° | 78,1% | 81,4% |
+| 15 Hz + 2° | 81,0% | 77,1% |
+| 10 Hz + 2° | 80,5% | 81,4% |
+
+Por isso o piso de qualidade do aplicativo e do painel desceu de 15 para
+10 Hz. A ressalva: no ETDD70 a degradação é limpa (sinal bom subamostrado e
+com ruído gaussiano); a câmera real tem tremor e movimento de cabeça, e a
+sessão real a 11 Hz detectou só 0,2 fixação por segundo, contra 1,8 do
+ETDD70 a 15 Hz. A taxa não é o gargalo; a qualidade do sinal é.
+
 **Sobre as faixas nos gráficos:** as barras de erro são a dispersão entre as 25
 partições de teste (cada uma com uns 14 participantes), não o intervalo de
 confiança da média. Por isso são largas (cerca de 65% a 95%) e se sobrepõem

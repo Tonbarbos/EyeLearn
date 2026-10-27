@@ -71,8 +71,8 @@ def main() -> int:
     older = base * 3.0
     older[constant] = base[constant]
     payloads.append(payload("BBB333", "2026-10-19T09:00:00Z", older))
-    # Gravação ruim (10 Hz): fica fora da comparação.
-    payloads.append(payload("FFF777", "2026-10-20T15:00:00Z", base * 5.0, rate=10.0))
+    # Gravação ruim (8 Hz): fica fora da comparação.
+    payloads.append(payload("FFF777", "2026-10-20T15:00:00Z", base * 5.0, rate=8.0))
     # Outra tarefa: não entra na comparação do texto.
     payloads.append(payload("AAA222", "2026-10-20T16:00:00Z", base * 7.0, task="syllables"))
 

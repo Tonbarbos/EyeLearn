@@ -29,7 +29,7 @@ void main() {
         calibration: calibration,
         passage: passageById('text'),
         onStarted: () => started++,
-        onFinished: (t, _) => trace = t,
+        onFinished: (t, _, __) => trace = t,
       ),
     ));
     String label() => tester

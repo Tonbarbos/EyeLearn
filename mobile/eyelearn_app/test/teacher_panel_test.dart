@@ -407,4 +407,42 @@ void main() {
     expect(find.text('Nenhuma sessão nova.'), findsOneWidget);
     expect(find.text('1 sessão'), findsOneWidget);
   });
+
+  testWidgets('com uma sessão só, compara com a base e mostra o mapa do olhar',
+      (tester) async {
+    final platform = _FakePlatform();
+    final storage = await _storedVault();
+    await _pump(tester, TeacherGate(environment: _teacher(platform, storage)));
+    await tester.enterText(find.byType(TextField), _password);
+    await _tap(tester, find.text('Entrar'));
+    await _tap(tester, find.text('5º A'));
+
+    final session = Map<String, dynamic>.from(
+        (_comparison['sessions'] as List).first as Map);
+    session['heatmap'] = GazeHeatmap.fromTrace(
+      GazeTrace(
+        t: [for (var i = 0; i < 100; i++) i / 20],
+        x: [for (var i = 0; i < 100; i++) -8.0 + (i % 20)],
+        y: [for (var i = 0; i < 100; i++) -6.0 + 2.0 * (i ~/ 20)],
+      ),
+      textArea: [-10.0, -8.0, 10.0, 4.0],
+    ).toJson();
+    platform.nextFiles = [(name: 'uma.json', text: jsonEncode(session))];
+    await _tap(tester, find.text('Sessões'));
+    await _tap(tester, find.text('Importar arquivos'));
+    await _tap(tester, find.text('OK'));
+    expect(find.byTooltip('Onde o olhar ficou'), findsOneWidget);
+
+    await _tap(tester, find.text('Leitura da turma'));
+    // Uma sessão só: não há turma, e a base entra sozinha.
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)));
+    await _settle(tester);
+    expect(find.text('Com a base ETDD70'), findsOneWidget);
+    expect(find.byType(ComparisonChart), findsOneWidget);
+    expect(find.byKey(const Key('heatmap')), findsOneWidget);
+    expect(
+        find.textContaining('do tempo de olhar sobre o texto'), findsOneWidget);
+    expect(find.textContaining('Não é diagnóstico'), findsWidgets);
+  });
 }

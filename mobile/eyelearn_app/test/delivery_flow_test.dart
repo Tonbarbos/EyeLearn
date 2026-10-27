@@ -141,6 +141,7 @@ void main() {
     }
     expect(find.byKey(const Key('delivery-sent')), findsOneWidget);
     expect(find.text('Enviar ao professor'), findsNothing);
+    expect(find.text('Enviar como arquivo'), findsNothing);
 
     // Na caixa, só um bloco ilegível.
     final row = inbox.rows.single;
@@ -151,6 +152,11 @@ void main() {
     final report = vault.importDeliveries(
         turma, await inbox.fetch(turma.uid, after: turma.deliveryCursor));
     expect(report.imported, hasLength(1));
+    // A sessão chega com o mapa de calor e a área do texto.
+    final delivered = turma.sessions.single;
+    expect(delivered.heatmap, isNotNull);
+    expect(delivered.heatmap!.textArea, hasLength(4));
+    expect(delivered.heatmap!.total, greaterThan(1));
     expect(turma.completedActivityCodes()[atividade.code], {ana.code});
   });
 }

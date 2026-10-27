@@ -270,8 +270,10 @@ class _AdultSection extends StatelessWidget {
                   () =>
                       Navigator.of(context).popUntil((route) => route.isFirst),
             ),
-            // Com envio automático, o arquivo fica como plano B, discreto.
-            if (delivery != null && onShare != null)
+            // Com envio automático, o arquivo só aparece se o envio não saiu
+            // (e mesmo assim ele sai sozinho depois): ninguém precisa mexer
+            // em arquivo quando a caixa de entrega funciona.
+            if (delivery == DeliveryState.queued && onShare != null)
               Center(
                 child: TextButton(
                   onPressed: onShare,

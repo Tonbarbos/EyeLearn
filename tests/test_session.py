@@ -95,7 +95,7 @@ class TestQuality:
         assert not session.has_usable_quality
 
     def test_rejects_low_sampling_rate(self):
-        session = session_from_dict(make_payload(sampling_rate=12.0))
+        session = session_from_dict(make_payload(sampling_rate=8.0))
         assert not session.has_usable_quality
 
     def test_flags_a_synthetic_model(self):
