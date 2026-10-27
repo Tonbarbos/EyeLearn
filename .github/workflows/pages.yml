@@ -63,10 +63,13 @@ jobs:
         # SUPABASE_URL e SUPABASE_ANON_KEY. Sem elas, o site sai sem envio
         # automático, e a sessão vai por arquivo. A chave anon é pública por
         # natureza; o que ela pode fazer está em supabase/entregas.sql.
+        # Aceita como variável ou como secret: as duas abas ficam lado a
+        # lado no GitHub, e criar na errada deixava o site sem envio.
         env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
         run: >-
+          echo "caixa de entrega: ${SUPABASE_URL:-não configurada}" &&
           flutter build web --release --no-web-resources-cdn --base-href /EyeLearn/
           --dart-define=SUPABASE_URL="$SUPABASE_URL"
           --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
