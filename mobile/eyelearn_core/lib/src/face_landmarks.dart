@@ -61,7 +61,15 @@ class FaceFrame {
 
   final List<Landmark> landmarks;
 
-  const FaceFrame({required this.timestamp, required this.landmarks});
+  /// O que a captura mede além dos pontos (tamanho da imagem, pose da cabeça,
+  /// luz, inclinação do aparelho); `null` quando a origem não mede nada disso.
+  final FrameConditions? conditions;
+
+  const FaceFrame({
+    required this.timestamp,
+    required this.landmarks,
+    this.conditions,
+  });
 
   /// Monta o quadro a partir do mapa que o canal nativo envia.
   ///
@@ -81,8 +89,12 @@ class FaceFrame {
       );
     }
 
+    final conditions = payload['conditions'];
     return FaceFrame(
       timestamp: (payload['timestamp'] as num).toDouble(),
+      conditions: conditions is Map
+          ? FrameConditions.fromMap(conditions.cast<Object?, Object?>())
+          : null,
       landmarks: [
         for (final point in points)
           Landmark(
@@ -91,6 +103,64 @@ class FaceFrame {
             (point[2] as num).toDouble(),
           ),
       ],
+    );
+  }
+}
+
+/// Medidas do quadro que não são pontos do rosto. Todas opcionais: cada
+/// origem mede o que consegue (a do navegador mede todas; a nativa, nenhuma).
+///
+/// Nenhuma delas é imagem. A luz e o brilho são dois números tirados da região
+/// dos olhos no próprio aparelho; a imagem não sai da captura.
+class FrameConditions {
+  /// Tamanho da imagem da câmera, em pixels.
+  final double? imageWidth;
+  final double? imageHeight;
+
+  /// Rotação da cabeça em relação à câmera, em graus: para os lados, para
+  /// cima ou baixo, e de lado (orelha no ombro). Só o tamanho importa; o
+  /// sinal depende da convenção do modelo.
+  final double? headYaw;
+  final double? headPitch;
+  final double? headRoll;
+
+  /// Brilho médio da região dos olhos, de 0 a 255.
+  final double? eyeLuma;
+
+  /// Fração da região dos olhos estourada de branco (reflexo, em geral nos
+  /// óculos), de 0 a 1.
+  final double? glare;
+
+  /// Inclinação do aparelho para a frente ou para trás, em graus: 90 em pé,
+  /// 0 deitado de costas na mesa.
+  final double? deviceTilt;
+
+  const FrameConditions({
+    this.imageWidth,
+    this.imageHeight,
+    this.headYaw,
+    this.headPitch,
+    this.headRoll,
+    this.eyeLuma,
+    this.glare,
+    this.deviceTilt,
+  });
+
+  factory FrameConditions.fromMap(Map<Object?, Object?> map) {
+    double? read(String key) {
+      final value = map[key];
+      return value is num && value.isFinite ? value.toDouble() : null;
+    }
+
+    return FrameConditions(
+      imageWidth: read('image_width'),
+      imageHeight: read('image_height'),
+      headYaw: read('head_yaw'),
+      headPitch: read('head_pitch'),
+      headRoll: read('head_roll'),
+      eyeLuma: read('eye_luma'),
+      glare: read('glare'),
+      deviceTilt: read('device_tilt'),
     );
   }
 }

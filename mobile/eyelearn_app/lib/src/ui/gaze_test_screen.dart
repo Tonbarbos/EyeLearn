@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 
 import '../gaze/gaze_source.dart';
 import 'calibration_screen.dart';
+import 'positioning_screen.dart';
 import 'theme.dart';
 
 /// Posição de um olhar calibrado na tela, como fração de 0 a 1.
@@ -62,6 +63,7 @@ class GazeTestScreen extends StatefulWidget {
 class _GazeTestScreenState extends State<GazeTestScreen> {
   late final GazeSource _source = widget.gaze();
   GazeCalibration? _calibration;
+  bool _positioned = false;
 
   /// Cada calibração nova recria a tela de calibração do zero.
   int _round = 0;
@@ -75,6 +77,13 @@ class _GazeTestScreenState extends State<GazeTestScreen> {
   @override
   Widget build(BuildContext context) {
     final calibration = _calibration;
+    if (!_positioned) {
+      return PositioningScreen(
+        key: ValueKey('posicao-$_round'),
+        channel: _source,
+        onReady: () => setState(() => _positioned = true),
+      );
+    }
     if (calibration == null) {
       return CalibrationScreen(
         key: ValueKey(_round),
@@ -91,6 +100,7 @@ class _GazeTestScreenState extends State<GazeTestScreen> {
       onViewing: widget.onViewing,
       onRecalibrate: () => setState(() {
         _calibration = null;
+        _positioned = false;
         _round++;
       }),
       onExit: () => Navigator.of(context).maybePop(),
@@ -131,6 +141,7 @@ class _GazeViewerState extends State<GazeViewer> {
   final _trail = ListQueue<Offset>();
   ({double x, double y})? _degrees;
   RejectionReason? _problem;
+  Posture? _posture;
 
   /// Instantes dos últimos quadros (s), para a taxa.
   final _times = ListQueue<double>();
@@ -160,6 +171,7 @@ class _GazeViewerState extends State<GazeViewer> {
     }
     _frames++;
 
+    _posture = Posture.of(frame) ?? _posture;
     final offset = irisOffset(frame);
     final gaze = offset == null || offset.openness < minimumOpenness
         ? null
@@ -211,6 +223,7 @@ class _GazeViewerState extends State<GazeViewer> {
       if (degrees != null)
         'olhar em x ${degrees.x.toStringAsFixed(1)}° · '
             'y ${degrees.y.toStringAsFixed(1)}°',
+      if (_posture case final p?) _postureLine(p),
     ].join('\n');
 
     return Scaffold(
@@ -307,6 +320,19 @@ class _GazeViewerState extends State<GazeViewer> {
       ),
     );
   }
+}
+
+/// Os números da posição, para ajustar os limites de `PositionLimits` num
+/// aparelho de verdade.
+String _postureLine(Posture p) {
+  String n(double? v, [int digits = 0]) =>
+      v == null ? '–' : v.toStringAsFixed(digits);
+  final issues = postureIssues(p);
+  return 'olho ${n(p.eyeWidthPx)} px · cabeça ${n(p.yaw)}°/${n(p.pitch)}°/'
+      '${n(p.roll)}° · luz ${n(p.eyeLuma)} · brilho '
+      '${p.glare == null ? '–' : '${(100 * p.glare!).toStringAsFixed(1)}%'} · '
+      'celular ${n(p.deviceTilt)}°'
+      '${issues.isEmpty ? '' : '\n${issues.map(positionMessage).join(' · ')}'}';
 }
 
 class _Reference extends StatelessWidget {

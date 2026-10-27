@@ -27,12 +27,16 @@ class ReadingScreen extends StatefulWidget {
   final GazeCalibration calibration;
   final Passage passage;
 
-  /// Chamada ao final, com o percurso, a qualidade da captura e onde o texto
+  /// A posição em que a calibração foi feita; com ela, a tela avisa quando
+  /// a criança sai dessa posição e conta quanto tempo ficou fora.
+  final PostureReference? postureReference;
+
+  /// Chamada ao final, com o percurso, a qualidade da captura, onde o texto
   /// ficou na tela, em graus (esquerda, topo, direita, base) -- para o mapa
-  /// de calor mostrar as linhas sob o olhar.
-  final void Function(
-          GazeTrace trace, RecordingQuality quality, List<double>? textArea)
-      onFinished;
+  /// de calor mostrar as linhas sob o olhar -- e a fração do tempo fora da
+  /// posição da calibração (`null` sem referência).
+  final void Function(GazeTrace trace, RecordingQuality quality,
+      List<double>? textArea, double? outOfPosition) onFinished;
 
   /// Chamada quando a captura começa.
   ///
@@ -49,6 +53,7 @@ class ReadingScreen extends StatefulWidget {
     required this.passage,
     required this.onFinished,
     this.onStarted,
+    this.postureReference,
   });
 
   @override
@@ -57,6 +62,8 @@ class ReadingScreen extends StatefulWidget {
 
 class _ReadingScreenState extends State<ReadingScreen> {
   late final GazeRecorder _recorder;
+  PostureMonitor? _monitor;
+  bool _outOfPosition = false;
   StreamSubscription<FaceFrame>? _subscription;
 
   bool _capturing = false;
@@ -144,12 +151,21 @@ class _ReadingScreenState extends State<ReadingScreen> {
     }
 
     _recorder.reset();
+    final reference = widget.postureReference;
+    _monitor = reference == null ? null : PostureMonitor(reference);
     _subscription = widget.channel.frames().listen(_onFrame);
     setState(() => _capturing = true);
     widget.onStarted?.call();
   }
 
   void _onFrame(FaceFrame frame) {
+    final monitor = _monitor;
+    if (monitor != null) {
+      monitor.add(frame);
+      if (monitor.isOut != _outOfPosition) {
+        setState(() => _outOfPosition = monitor.isOut);
+      }
+    }
     final rejection = _recorder.add(frame);
     if (rejection == null) {
       if (_warning != null) setState(() => _warning = null);
@@ -178,7 +194,8 @@ class _ReadingScreenState extends State<ReadingScreen> {
     await widget.channel.stop();
 
     setState(() => _capturing = false);
-    widget.onFinished(_recorder.build(), _recorder.quality(), _textArea());
+    widget.onFinished(_recorder.build(), _recorder.quality(), _textArea(),
+        _monitor?.outRatio);
   }
 
   @override
@@ -212,12 +229,18 @@ class _ReadingScreenState extends State<ReadingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_warning != null)
+                  if (_outOfPosition || _warning != null)
                     NoticeCard(
-                      icon: Icons.visibility_outlined,
+                      key: _outOfPosition ? const Key('out-of-position') : null,
+                      icon: _outOfPosition
+                          ? Icons.screen_rotation_alt_rounded
+                          : Icons.visibility_outlined,
                       tint: const Color(0xFF9A5B00),
                       background: Palette.amberSoft,
-                      text: _warning!,
+                      text: _outOfPosition
+                          ? 'Volte o celular e o rosto para a posição do '
+                              'começo'
+                          : _warning!,
                     ),
                   if (_error != null)
                     NoticeCard(
@@ -226,7 +249,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                       background: Palette.coralSoft,
                       text: _error!,
                     ),
-                  if (_warning != null || _error != null)
+                  if (_outOfPosition || _warning != null || _error != null)
                     const SizedBox(height: 14),
                   PrimaryButton(
                     key: const Key('reading-button'),

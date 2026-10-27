@@ -1007,6 +1007,10 @@ class _SessionRow extends StatelessWidget {
                     '${s.samplingRateHz.round()} quadros/s',
                     if (activityDeleted) 'atividade apagada',
                     if (!ok) 'qualidade baixa',
+                    // Fora da posição da calibração, o olhar perde precisão.
+                    if ((s.outOfPositionRatio ?? 0) >= 0.1)
+                      'fora da posição em '
+                          '${(100 * s.outOfPositionRatio!).round()}% do tempo',
                   ].join(' · '),
                   style: AppType.body
                       .copyWith(fontSize: 13.5, color: Palette.inkMuted),

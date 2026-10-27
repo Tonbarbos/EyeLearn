@@ -77,6 +77,10 @@ class SyntheticGazeSource implements GazeSource {
     Timer(duration, () => _blinking = false);
   }
 
+  /// Condições anexadas a cada quadro (pose, luz...), como as da captura do
+  /// navegador; `null` para quadros só com pontos.
+  FrameConditions? conditions;
+
   /// Simula o rosto saindo do enquadramento.
   // ignore: avoid_setters_without_getters
   set faceVisible(bool visible) => _faceVisible = visible;
@@ -102,7 +106,7 @@ class SyntheticGazeSource implements GazeSource {
   FaceFrame _nextFrame() {
     if (!_faceVisible) return faceAbsentFrame(timestamp: _clock);
 
-    return syntheticFaceFrame(
+    final frame = syntheticFaceFrame(
       offsetX: _offsetX + _noise(),
       offsetY: _offsetY + _noise(),
       timestamp: _clock,
@@ -110,6 +114,13 @@ class SyntheticGazeSource implements GazeSource {
       // a amostra como perdida em vez de usá-la.
       opennessFraction: _blinking ? 0.02 : defaultOpenness,
     );
+    return conditions == null
+        ? frame
+        : FaceFrame(
+            timestamp: frame.timestamp,
+            landmarks: frame.landmarks,
+            conditions: conditions,
+          );
   }
 
   double _noise() => (_random.nextDouble() - 0.5) * 2 * jitter;

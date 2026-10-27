@@ -16,6 +16,7 @@ import 'dart:async';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
+import 'positioning_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -60,6 +61,11 @@ class CalibrationScreen extends StatefulWidget {
   /// Chamada com a calibração ajustada, quando ela é aceitável.
   final void Function(GazeCalibration) onCalibrated;
 
+  /// Chamada junto com [onCalibrated], com a posição em que a calibração
+  /// foi feita (`null` se a captura não deu para medir), para a leitura
+  /// saber quando sair dela.
+  final void Function(PostureReference?)? onPostureReference;
+
   /// Chamada a cada alvo apresentado.
   ///
   /// Existe para que uma origem de olhar que não seja a câmera saiba para onde
@@ -72,6 +78,7 @@ class CalibrationScreen extends StatefulWidget {
     super.key,
     required this.channel,
     required this.onCalibrated,
+    this.onPostureReference,
     this.onTargetShown,
   });
 
@@ -89,6 +96,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   );
 
   String? _message;
+
+  /// Posições dos quadros medidos, para a referência da leitura.
+  final List<Posture> _postures = [];
+
+  /// Quadros seguidos com a posição ruim, e o problema do último.
+  int _badFrames = 0;
+  PositionIssue? _positionIssue;
   bool _failed = false;
 
   static double _degreesX(double f) =>
@@ -127,8 +141,24 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   void _onFrame(FaceFrame frame) {
+    // Com o rosto fora da posição, a medida não vale: a calibração espera.
+    // Alguns quadros seguidos, para um tremor no limite não travar tudo.
+    final blocking = [
+      for (final issue in assessPosition(frame))
+        if (blockingIssues.contains(issue)) issue
+    ];
+    _badFrames = blocking.isEmpty ? 0 : _badFrames + 1;
+    if (_badFrames >= 5 && blocking.first != PositionIssue.noFace) {
+      setState(() => _positionIssue = blocking.first);
+      return;
+    }
     final event = _calibrator.add(frame);
+    if (_calibrator.status == DwellStatus.filling) {
+      final posture = Posture.of(frame);
+      if (posture != null) _postures.add(posture);
+    }
     setState(() {
+      _positionIssue = null;
       if (event == DwellEvent.targetConfirmed) _message = null;
     });
     switch (event) {
@@ -143,6 +173,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   void _restart(String message) {
     setState(() => _message = message);
+    _postures.clear();
     _calibrator.reset();
     widget.onTargetShown?.call(calibrationTargets[0]);
   }
@@ -156,6 +187,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       }
       _subscription?.cancel();
       _subscription = null;
+      widget.onPostureReference?.call(PostureReference.fromPostures(_postures));
       widget.onCalibrated(calibration);
     } on CalibrationError {
       _restart('Não deu certo. Vamos tentar outra vez!');
@@ -200,7 +232,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                     child: Column(
                       children: [
                         Text(
-                          _message ?? _hint,
+                          _message ??
+                              (_positionIssue == null
+                                  ? _hint
+                                  : positionMessage(_positionIssue!)),
                           key: const Key('calibration-hint'),
                           textAlign: TextAlign.center,
                           style: AppType.title.copyWith(
