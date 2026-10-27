@@ -59,7 +59,18 @@
     try {
       return await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        // 480x360 e não 640x480: o modelo trabalha num recorte de 192x192
+        // do rosto, e um rosto a meio metro já ocupa mais que isso nessa
+        // resolução. A mais, só custava tempo por quadro -- e a primeira
+        // sessão num celular real saiu a 11 quadros por segundo. Pedir 30
+        // por segundo evita que a câmera fique nos 15 que alguns aparelhos
+        // usam por padrão.
+        video: {
+          facingMode: "user",
+          width: { ideal: 480 },
+          height: { ideal: 360 },
+          frameRate: { ideal: 30 },
+        },
       });
     } catch (error) {
       if (error && error.name === "NotAllowedError") {

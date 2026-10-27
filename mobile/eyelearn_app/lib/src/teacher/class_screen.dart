@@ -11,6 +11,7 @@ import '../ui/widgets.dart';
 import '../delivery/inbox.dart';
 import 'comparison_chart.dart';
 import 'etdd70_comparison.dart';
+import 'heatmap_view.dart';
 import 'panel_widgets.dart';
 import 'teacher_controller.dart';
 
@@ -125,6 +126,10 @@ class _ComparisonTabState extends State<ComparisonTab> {
   String _task = 'text';
   String? _selected;
 
+  /// Com quem comparar: `turma` ou `base` (ETDD70). Sem escolha, a turma
+  /// quando dá (três gravações ou mais) e a base enquanto não dá.
+  String? _mode;
+
   VaultClass get target => widget.target;
 
   @override
@@ -139,6 +144,7 @@ class _ComparisonTabState extends State<ComparisonTab> {
     } on NotEnoughParticipants catch (error) {
       notEnough = error.message;
     }
+    final mode = _mode ?? (comparison == null ? 'base' : 'turma');
 
     return PanelBody(
       children: [
@@ -153,8 +159,30 @@ class _ComparisonTabState extends State<ComparisonTab> {
             _selected = null;
           }),
         ),
+        const SizedBox(height: 10),
+        SegmentedButton<String>(
+          key: const Key('comparison-mode'),
+          segments: const [
+            ButtonSegment(
+                value: 'turma',
+                icon: Icon(Icons.groups_outlined),
+                label: Text('Com a turma')),
+            ButtonSegment(
+                value: 'base',
+                icon: Icon(Icons.dataset_outlined),
+                label: Text('Com a base ETDD70')),
+          ],
+          selected: {mode},
+          onSelectionChanged: (s) => setState(() => _mode = s.first),
+        ),
         const SizedBox(height: 16),
-        if (comparison == null)
+        if (mode == 'base')
+          BaseComparisonView(
+            key: ValueKey(_task),
+            target: target,
+            task: _task,
+          )
+        else if (comparison == null)
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,8 +190,8 @@ class _ComparisonTabState extends State<ComparisonTab> {
                 Text(notEnough!, style: AppType.subtitle),
                 const SizedBox(height: 6),
                 Text(
-                  'Enquanto isso, cada sessão pode ser comparada com as '
-                  'crianças da base ETDD70, na aba Sessões.',
+                  'Enquanto isso, a leitura de cada criança pode ser '
+                  'comparada com a base ETDD70, em "Com a base ETDD70".',
                   style: AppType.body.copyWith(color: Palette.inkMuted),
                 ),
               ],
@@ -171,7 +199,7 @@ class _ComparisonTabState extends State<ComparisonTab> {
           )
         else
           ..._comparison(comparison),
-        if (lowQuality > 0) ...[
+        if (lowQuality > 0 && mode == 'turma') ...[
           const SizedBox(height: 12),
           Text(
             '${plural(lowQuality, 'gravação', 'gravações')} desta tarefa '
@@ -309,6 +337,124 @@ class _ComparisonTabState extends State<ComparisonTab> {
         ),
       ),
     ];
+  }
+}
+
+/// A leitura de cada criança comparada com as crianças do ETDD70, desde a
+/// primeira gravação: não depende de a turma ter três sessões.
+class BaseComparisonView extends StatefulWidget {
+  final VaultClass target;
+  final String task;
+
+  const BaseComparisonView({
+    super.key,
+    required this.target,
+    required this.task,
+  });
+
+  @override
+  State<BaseComparisonView> createState() => _BaseComparisonViewState();
+}
+
+class _BaseComparisonViewState extends State<BaseComparisonView> {
+  static Future<Map<String, dynamic>>? _reference;
+  String? _selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final latest = <String, Session>{};
+    for (final s in widget.target.sessions) {
+      if (s.task == widget.task) latest[s.participantCode] = s;
+    }
+    if (latest.isEmpty) {
+      return const AppCard(
+        child: Text('Ainda não há gravação desta tarefa.',
+            style: AppType.subtitle),
+      );
+    }
+    final codes = latest.keys.toList()
+      ..sort((a, b) =>
+          _nameOf(widget.target, a).compareTo(_nameOf(widget.target, b)));
+    final code = codes.contains(_selected) ? _selected! : codes.first;
+    final session = latest[code]!;
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _reference ??= loadEtdd70Reference(),
+      builder: (context, snapshot) {
+        final reference = snapshot.data;
+        if (reference == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final comparison = compareWithEtdd70(session, reference);
+        return AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButton<String>(
+                value: code,
+                isExpanded: true,
+                underline: const SizedBox.shrink(),
+                style: AppType.title.copyWith(color: Palette.ink),
+                items: [
+                  for (final c in codes)
+                    DropdownMenuItem(
+                        value: c, child: Text(_nameOf(widget.target, c))),
+                ],
+                onChanged: (c) => setState(() => _selected = c),
+              ),
+              Text(
+                'Gravação de ${formatDateTime(session.startedAt)}, '
+                '${session.samplingRateHz.round()} quadros/s'
+                '${session.hasUsableQuality() ? '' : ' (qualidade baixa)'}'
+                '${comparison == null ? '' : '. Referência: ETDD70 a '
+                    '${comparison.conditionLabel}, a condição mais próxima.'}',
+                style: AppType.body
+                    .copyWith(fontSize: 14, color: Palette.inkMuted),
+              ),
+              const SizedBox(height: 10),
+              if (session.heatmap != null) ...[
+                Center(
+                  child: GazeHeatmapView(
+                      heatmap: session.heatmap!, task: session.task),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (comparison == null)
+                const Text('A base não tem esta tarefa.')
+              else ...[
+                const Text(
+                    'Desvios em relação às crianças sem dislexia da base:',
+                    style: AppType.subtitle),
+                const SizedBox(height: 8),
+                ComparisonChart(
+                  scores: {
+                    for (final r in comparison.rows)
+                      r.feature: r.zTypical.clamp(-6.0, 6.0),
+                  },
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () => showEtdd70Comparison(
+                        context, session, _nameOf(widget.target, code),
+                        loadReference: () async => reference),
+                    child: const Text('Ver todas as características'),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 6),
+              const ErrorNotice(
+                'Não é diagnóstico. A base é de crianças tchecas lendo em '
+                'tcheco num rastreador de laboratório; a gravação é de outro '
+                'texto e de uma câmera de celular. Serve para ver se a '
+                'captura está no caminho, não para concluir nada sobre a '
+                'criança.',
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -783,10 +929,37 @@ class SessionsTab extends StatelessWidget {
                         'atividade apagada',
                       if (!s.hasUsableQuality()) 'qualidade baixa',
                     ].join(' · ')),
-                    trailing: TextButton(
-                      onPressed: () => showEtdd70Comparison(
-                          context, s, _nameOf(target, s.participantCode)),
-                      child: const Text('Comparar com o ETDD70'),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: [
+                        if (s.heatmap != null)
+                          IconButton(
+                            tooltip: 'Onde o olhar ficou',
+                            icon: const Icon(Icons.blur_on_rounded),
+                            onPressed: () => showDialog<void>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: Text('Onde o olhar ficou · '
+                                    '${_nameOf(target, s.participantCode)}'),
+                                content: GazeHeatmapView(
+                                    heatmap: s.heatmap!,
+                                    task: s.task,
+                                    width: 260),
+                                actions: [
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text('Fechar'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        TextButton(
+                          onPressed: () => showEtdd70Comparison(
+                              context, s, _nameOf(target, s.participantCode)),
+                          child: const Text('Comparar com o ETDD70'),
+                        ),
+                      ],
                     ),
                   ),
               ],

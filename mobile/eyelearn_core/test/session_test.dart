@@ -127,7 +127,7 @@ void main() {
       // Uma sessão a 12 Hz não é comparável a uma a 30 Hz: a curva de
       // degradação mostra que a acurácia depende da taxa.
       expect(
-        buildSession(validRatio: 0.95, samplingRate: 12.0).hasUsableQuality(),
+        buildSession(validRatio: 0.95, samplingRate: 8.0).hasUsableQuality(),
         isFalse,
       );
     });

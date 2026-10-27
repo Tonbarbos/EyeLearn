@@ -177,10 +177,12 @@ primeira vez, o painel pede seu nome e uma senha. Depois, numa tela só:
    turma (ou em **Sessões > Buscar entregas**). Sem internet na hora, o
    aparelho guarda e envia na próxima vez que o aplicativo abrir. Arquivos
    `.json` mandados à mão ainda podem ser importados.
-6. Em **Leitura da turma**, cada criança aparece comparada com a turma, por
-   característica, com as sugestões de adaptação. Com menos de três
-   gravações, cada sessão pode ser comparada com as crianças do ETDD70
-   (**Sessões > Comparar com o ETDD70**, ou `scripts/compare_session.py`).
+6. Em **Leitura da turma**, cada criança aparece comparada **com a turma**
+   (a partir de três gravações) ou **com a base ETDD70** (desde a primeira),
+   por característica, com as sugestões de adaptação. Junto vai o **mapa do
+   olhar**: a tela do celular com as linhas do texto e onde o olhar ficou,
+   numa grade grossa de 12 x 16 (só tempo por região, sem o percurso). Também
+   por `scripts/compare_session.py`.
 
 **Onde ficam os dados.** Não há servidor nem conta online. Tudo do professor
 fica num *cofre*: um arquivo cifrado com a senha dele (AES-256-GCM, chave
