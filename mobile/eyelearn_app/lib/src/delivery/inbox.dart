@@ -33,7 +33,8 @@ class InboxError implements Exception {
   String toString() => 'InboxError: $message';
 }
 
-/// Endereço e chave pública do projeto Supabase.
+/// Endereço e chave pública do projeto Supabase: a chave publicável
+/// (`sb_publishable_...`) ou, em projeto antigo, a anon (`eyJ...`).
 ///
 /// Vêm da compilação (`--dart-define=SUPABASE_URL=... --dart-define=
 /// SUPABASE_ANON_KEY=...`, que `.github/workflows/pages.yml` preenche com as
@@ -69,9 +70,13 @@ class SupabaseInbox implements Inbox {
       Uri.parse('${config.url.replaceAll(RegExp(r'/+$'), '')}/rest/v1/entregas')
           .replace(queryParameters: query);
 
+  /// A chave vai sempre em `apikey`. Em `Authorization` só a chave antiga
+  /// (anon, um JWT que começa com `eyJ`): a nova chave publicável
+  /// (`sb_publishable_...`) não é JWT, e o Supabase a recusa ali.
   Map<String, String> get _headers => {
         'apikey': config.anonKey,
-        'Authorization': 'Bearer ${config.anonKey}',
+        if (config.anonKey.startsWith('eyJ'))
+          'Authorization': 'Bearer ${config.anonKey}',
         'Content-Type': 'application/json',
       };
 

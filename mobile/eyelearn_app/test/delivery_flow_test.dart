@@ -14,7 +14,7 @@ import 'package:http/testing.dart';
 
 void main() {
   group('caixa do Supabase', () {
-    const config = InboxConfig('https://abc.supabase.co/', 'chave-anon');
+    const config = InboxConfig('https://abc.supabase.co/', 'eyJchave-anon');
 
     test('sem projeto configurado, não há caixa', () {
       expect(const InboxConfig('', '').create(), isNull);
@@ -30,8 +30,8 @@ void main() {
       await inbox.send('0123456789abcdef', 'BLOCO');
       expect(sent.method, 'POST');
       expect(sent.url.toString(), 'https://abc.supabase.co/rest/v1/entregas');
-      expect(sent.headers['apikey'], 'chave-anon');
-      expect(sent.headers['Authorization'], 'Bearer chave-anon');
+      expect(sent.headers['apikey'], 'eyJchave-anon');
+      expect(sent.headers['Authorization'], 'Bearer eyJchave-anon');
       expect(jsonDecode(sent.body),
           {'turma': '0123456789abcdef', 'blob': 'BLOCO'});
     });
@@ -52,6 +52,19 @@ void main() {
       expect(asked.queryParameters['id'], 'gt.7');
       expect(asked.queryParameters['order'], 'id.asc');
       expect(rows.map((r) => r.id), [8, 9]);
+    });
+
+    test('chave publicável nova vai só em apikey', () async {
+      late http.Request sent;
+      final inbox =
+          const InboxConfig('https://abc.supabase.co', 'sb_publishable_abc123')
+              .create(client: MockClient((request) async {
+        sent = request;
+        return http.Response('[]', 200);
+      }))!;
+      await inbox.fetch('0123456789abcdef');
+      expect(sent.headers['apikey'], 'sb_publishable_abc123');
+      expect(sent.headers.containsKey('Authorization'), isFalse);
     });
 
     test('recusa da caixa vira InboxError', () async {

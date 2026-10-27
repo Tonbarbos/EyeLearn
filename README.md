@@ -323,8 +323,10 @@ Para ligar (uma vez):
 1. Crie uma conta em https://supabase.com e um projeto (plano gratuito).
 2. No projeto, **SQL Editor > New query**: cole `supabase/entregas.sql` e
    clique em **Run**.
-3. Em **Project Settings > API**, copie a **Project URL** e a chave
-   **anon public**.
+3. Copie a **URL do projeto** (`https://<id>.supabase.co`; botão
+   **Connect** no topo do projeto, ou **Settings > Data API**) e a **chave
+   publicável** (**Settings > API Keys > Publishable key**, `sb_publishable_...`;
+   em projeto antigo, a chave **anon** da aba *Legacy*). Nunca a secreta.
 4. No GitHub, em **Settings > Secrets and variables > Actions > Variables**,
    crie as variáveis `SUPABASE_URL` e `SUPABASE_ANON_KEY` com esses valores.
 5. Publique de novo (qualquer PR aprovado na `main`, ou **Actions >
