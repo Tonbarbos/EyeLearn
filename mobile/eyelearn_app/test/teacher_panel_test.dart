@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:eyelearn_app/src/delivery/inbox.dart';
 import 'package:eyelearn_app/src/homework_app.dart';
 import 'package:eyelearn_app/src/gaze/synthetic_gaze_source.dart';
 import 'package:eyelearn_app/src/session/class_storage.dart';
@@ -44,12 +45,14 @@ class _FakePlatform implements TeacherPlatform {
 const _iterations = 1000;
 const _password = 'senha-boa-o-bastante';
 
-TeacherEnvironment _teacher(_FakePlatform platform, VaultStorage storage) =>
+TeacherEnvironment _teacher(_FakePlatform platform, VaultStorage storage,
+        {Inbox? inbox}) =>
     TeacherEnvironment(
       platform: platform,
       storage: storage,
       clock: () => _today,
       kdfIterations: _iterations,
+      inbox: inbox,
     );
 
 Future<void> _settle(WidgetTester tester) async {
@@ -360,5 +363,48 @@ void main() {
     ));
     await _settle(tester);
     expect(find.textContaining('outra versão'), findsOneWidget);
+  });
+
+  testWidgets('ao abrir a turma, as entregas novas chegam sozinhas',
+      (tester) async {
+    final storage = await _storedVault();
+    // Uma criança da turma terminou a atividade: a sessão está na caixa,
+    // cifrada para este cofre.
+    final envelope = VaultEnvelope.parse(storage.envelope!);
+    final vault = unlockVault(
+        envelope,
+        deriveVaultKey(_password,
+            iterations: envelope.iterations, salt: envelope.salt));
+    final turma = vault.classes.single;
+    final session = Map<String, dynamic>.from(
+        (_comparison['sessions'] as List).first as Map);
+    final inbox = MemoryInbox();
+    await inbox.send(
+        turma.uid,
+        sealForTeacher(
+            utf8.encode(jsonEncode(session)), vault.deliveryKeys.publicKey));
+    // O cofre guardado precisa ter as mesmas chaves de entrega.
+    storage.envelope = lockVault(
+            vault,
+            deriveVaultKey(_password,
+                iterations: _iterations, salt: envelope.salt),
+            iterations: _iterations)
+        .toJsonString();
+
+    final platform = _FakePlatform();
+    await _pump(tester,
+        TeacherGate(environment: _teacher(platform, storage, inbox: inbox)));
+    await tester.enterText(find.byType(TextField), _password);
+    await _tap(tester, find.text('Entrar'));
+    await _tap(tester, find.text('5º A'));
+    expect(find.text('1 sessão nova chegou.'), findsOneWidget);
+    await _tap(tester, find.text('Sessões'));
+    expect(find.text('1 sessão'), findsOneWidget);
+    expect(find.text('Buscar entregas'), findsOneWidget);
+
+    // Buscar de novo não repete.
+    await _tap(tester, find.text('Buscar entregas'));
+    expect(find.text('Nenhuma sessão nova.'), findsOneWidget);
+    expect(find.text('1 sessão'), findsOneWidget);
   });
 }

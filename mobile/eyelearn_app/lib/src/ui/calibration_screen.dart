@@ -1,10 +1,10 @@
-/// Tela de calibração: a criança segura o olhar em cada bolinha até ela encher.
+/// Tela de calibração: a criança olha para cada bolinha até ela encher.
 ///
-/// Como o botão do Kinect, em que se segura a mão parada até confirmar: a
-/// bolinha só enche enquanto o olhar está parado nela, e esvazia se ele sai.
-/// Desde a primeira bolinha confirmada aparece um cursor onde o aparelho acha
-/// que a criança está olhando, que fica mais certeiro a cada bolinha. A regra
-/// está em `DwellCalibrator` (núcleo), testada sem tela.
+/// A bolinha enche com o tempo, enquanto o rosto está no quadro, depois de
+/// meio segundo para o olho chegar até ela; a medida é a mediana do que foi
+/// colhido. Desde a primeira bolinha aparece um cursor onde o aparelho acha
+/// que a criança está olhando. A regra, e por que ela não exige mais o olhar
+/// parado, está em `DwellCalibrator` (núcleo), testada sem tela.
 ///
 /// Nove alvos: o centro primeiro (dá o ponto de partida do cursor) e depois a
 /// volta pela tela. Mais alvos e medida mais longa por alvo são o que tira o
@@ -179,8 +179,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   String get _hint => switch (_calibrator.status) {
         DwellStatus.filling => 'Isso! Continue olhando…',
-        DwellStatus.moving => 'Olhe para a bolinha e segure o olhar',
-        DwellStatus.offTarget => 'Olhe para a bolinha amarela',
+        DwellStatus.settling => 'Olhe para a bolinha amarela',
         DwellStatus.noFace => 'Não estou vendo seu rosto',
         DwellStatus.eyesClosed => 'Olhos bem abertos!',
       };
@@ -228,7 +227,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                         Text(
                           _failed
                               ? ''
-                              : 'Segure o olhar até a bolinha encher. '
+                              : 'Olhe para a bolinha até ela encher. '
                                   'Deixe a cabeça parada.',
                           textAlign: TextAlign.center,
                           style: AppType.body.copyWith(

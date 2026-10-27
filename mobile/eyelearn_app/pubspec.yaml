@@ -35,6 +35,10 @@ dependencies:
   # substitui um servidor: nada trafega pela rede.
   share_plus: ^10.0.2
   shared_preferences: ^2.5.6
+
+  # Envio da sessão à caixa de entrega (Supabase, pela API REST). Pacote da
+  # equipe do Dart; no navegador usa o fetch.
+  http: ^1.2.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -53,6 +57,9 @@ flutter:
     - assets/model_pseudotext.json
     # Só a pré-visualização no navegador usa. Turma fictícia.
     - assets/demo_class.json
+    # Agregados do ETDD70 para comparar uma sessão com a base
+    # (scripts/make_etdd70_reference.py). CC BY 4.0, Dostálová et al. (2024).
+    - assets/etdd70_reference.json
 
   # O Roboto vai embutido, e não deixado ao padrão da plataforma, por uma razão
   # de medida: o mesmo texto tem de ocupar a mesma largura em todo aparelho.

@@ -8,7 +8,9 @@ import 'package:flutter/services.dart';
 
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import '../delivery/inbox.dart';
 import 'comparison_chart.dart';
+import 'etdd70_comparison.dart';
 import 'panel_widgets.dart';
 import 'teacher_controller.dart';
 
@@ -21,7 +23,7 @@ String parentsMessage(String className, String link) =>
     'mesa. A câmera é usada só no aparelho: nenhuma imagem sai dele.\n\n'
     '$link';
 
-class ClassScreen extends StatelessWidget {
+class ClassScreen extends StatefulWidget {
   final TeacherController controller;
   final VaultClass target;
 
@@ -30,6 +32,23 @@ class ClassScreen extends StatelessWidget {
     required this.controller,
     required this.target,
   });
+
+  @override
+  State<ClassScreen> createState() => _ClassScreenState();
+}
+
+class _ClassScreenState extends State<ClassScreen> {
+  TeacherController get controller => widget.controller;
+  VaultClass get target => widget.target;
+
+  @override
+  void initState() {
+    super.initState();
+    // As sessões chegam sozinhas: ao abrir a turma, o painel busca as
+    // entregas novas.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => fetchDeliveries(context, controller, target, quiet: true));
+  }
 
   Future<void> _delete(BuildContext context) async {
     final ok = await confirmAction(
@@ -136,7 +155,20 @@ class _ComparisonTabState extends State<ComparisonTab> {
         ),
         const SizedBox(height: 16),
         if (comparison == null)
-          AppCard(child: Text(notEnough!, style: AppType.subtitle))
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(notEnough!, style: AppType.subtitle),
+                const SizedBox(height: 6),
+                Text(
+                  'Enquanto isso, cada sessão pode ser comparada com as '
+                  'crianças da base ETDD70, na aba Sessões.',
+                  style: AppType.body.copyWith(color: Palette.inkMuted),
+                ),
+              ],
+            ),
+          )
         else
           ..._comparison(comparison),
         if (lowQuality > 0) ...[
@@ -634,6 +666,37 @@ class _StatusDot extends StatelessWidget {
 
 // -- sessões -------------------------------------------------------------------
 
+/// Busca as entregas novas e conta o que chegou. Com [quiet], não diz nada
+/// quando não chegou nada nem quando falta internet.
+Future<void> fetchDeliveries(
+  BuildContext context,
+  TeacherController controller,
+  VaultClass target, {
+  bool quiet = false,
+}) async {
+  try {
+    final report = await controller.fetchDeliveries(target);
+    if (report == null || !context.mounted) return;
+    final arrived = report.imported.length;
+    if (arrived > 0) {
+      showMessage(context,
+          '${plural(arrived, 'sessão nova chegou', 'sessões novas chegaram')}.');
+    } else if (!quiet) {
+      showMessage(context, 'Nenhuma sessão nova.');
+    }
+    final problems = report.unknownCodes.length +
+        report.unreadable.length +
+        report.wrongActivity.length;
+    if (problems > 0 && context.mounted) {
+      await showImportReport(context, report);
+    }
+  } on InboxError {
+    if (!quiet && context.mounted) {
+      showMessage(context, 'Sem conexão com a caixa de entrega agora.');
+    }
+  }
+}
+
 class SessionsTab extends StatelessWidget {
   final TeacherController controller;
   final VaultClass target;
@@ -656,6 +719,7 @@ class SessionsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canImport = controller.environment.platform.pickFiles != null;
+    final hasInbox = controller.environment.inbox != null;
     final activities = {for (final a in target.activities) a.code: a};
     final sessions = target.sessions.reversed.toList();
     return PanelBody(
@@ -666,7 +730,15 @@ class SessionsTab extends StatelessWidget {
               child: Text(plural(sessions.length, 'sessão', 'sessões'),
                   style: AppType.title),
             ),
-            FilledButton.icon(
+            if (hasInbox) ...[
+              FilledButton.icon(
+                onPressed: () => fetchDeliveries(context, controller, target),
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text('Buscar entregas'),
+              ),
+              const SizedBox(width: 10),
+            ],
+            OutlinedButton.icon(
               onPressed: canImport ? () => _import(context) : null,
               icon: const Icon(Icons.upload_file_rounded),
               label: const Text('Importar arquivos'),
@@ -675,9 +747,14 @@ class SessionsTab extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'As famílias mandam um arquivo .json por atividade (pelo WhatsApp ou '
-          'e-mail). Salve-os no computador e importe todos de uma vez; '
-          'arquivos repetidos são ignorados.',
+          hasInbox
+              ? 'As sessões chegam sozinhas quando a criança termina a '
+                  'atividade, cifradas para este painel; o painel busca ao '
+                  'abrir a turma. Arquivos .json mandados à mão também podem '
+                  'ser importados.'
+              : 'As famílias mandam um arquivo .json por atividade (pelo '
+                  'WhatsApp ou e-mail). Salve-os no computador e importe '
+                  'todos de uma vez; arquivos repetidos são ignorados.',
           style: AppType.body.copyWith(fontSize: 14, color: Palette.inkMuted),
         ),
         const SizedBox(height: 12),
@@ -706,6 +783,11 @@ class SessionsTab extends StatelessWidget {
                         'atividade apagada',
                       if (!s.hasUsableQuality()) 'qualidade baixa',
                     ].join(' · ')),
+                    trailing: TextButton(
+                      onPressed: () => showEtdd70Comparison(
+                          context, s, _nameOf(target, s.participantCode)),
+                      child: const Text('Comparar com o ETDD70'),
+                    ),
                   ),
               ],
             ),

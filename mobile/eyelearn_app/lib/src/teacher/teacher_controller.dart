@@ -10,6 +10,7 @@ import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../delivery/inbox.dart';
 import 'teacher_platform.dart';
 
 /// Onde o cofre cifrado fica no aparelho.
@@ -94,12 +95,17 @@ class TeacherEnvironment {
   /// Onde o link da turma abre.
   final String appUrl;
 
+  /// A caixa de entrega de onde as sessões chegam sozinhas; `null` sem
+  /// projeto configurado, e aí só a importação de arquivos.
+  final Inbox? inbox;
+
   const TeacherEnvironment({
     required this.platform,
     required this.storage,
     required this.clock,
     this.kdfIterations = vaultKdfIterations,
     this.appUrl = defaultAppUrl,
+    this.inbox,
   });
 }
 
@@ -191,6 +197,18 @@ class TeacherController extends ChangeNotifier {
 
   Future<void> _save() async => _storage
       .save(lockVault(vault, _key, iterations: _iterations).toJsonString());
+
+  /// Busca na caixa as entregas novas da turma e importa. `null` sem caixa.
+  ///
+  /// Lança [InboxError] sem conexão.
+  Future<ImportReport?> fetchDeliveries(VaultClass target) async {
+    final inbox = environment.inbox;
+    if (inbox == null) return null;
+    final deliveries =
+        await inbox.fetch(target.uid, after: target.deliveryCursor);
+    if (deliveries.isEmpty) return ImportReport();
+    return change((v) => v.importDeliveries(target, deliveries));
+  }
 
   /// Baixa a cópia de segurança: o mesmo cofre cifrado, num arquivo.
   Future<void> downloadBackup() async {

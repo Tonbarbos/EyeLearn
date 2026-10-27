@@ -11,6 +11,7 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'src/activity/models.dart';
+import 'src/delivery/inbox.dart';
 import 'src/gaze/platform_gaze.dart';
 import 'src/homework_app.dart';
 import 'src/session/class_storage.dart';
@@ -25,6 +26,7 @@ Future<void> main() async {
   final initialLink = kIsWeb ? Uri.base.toString() : null;
   setUrlStrategy(null);
   WidgetsFlutterBinding.ensureInitialized();
+  final inbox = InboxConfig.fromEnvironment.create();
 
   runApp(
     HomeworkApp(
@@ -42,7 +44,10 @@ Future<void> main() async {
           platform: createTeacherPlatform(),
           storage: PrefsVaultStorage(),
           clock: DateTime.now,
+          inbox: inbox,
         ),
+        inbox: inbox,
+        outbox: PrefsOutbox(),
       ),
     ),
   );

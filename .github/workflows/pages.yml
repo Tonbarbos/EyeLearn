@@ -57,7 +57,19 @@ jobs:
       - name: Compilar
         # --no-web-resources-cdn: o CanvasKit vem do próprio site, não do
         # CDN do Google.
-        run: flutter build web --release --no-web-resources-cdn --base-href /EyeLearn/
+        #
+        # A caixa de entrega (Supabase) vem das variáveis do repositório
+        # (Settings > Secrets and variables > Actions > Variables):
+        # SUPABASE_URL e SUPABASE_ANON_KEY. Sem elas, o site sai sem envio
+        # automático, e a sessão vai por arquivo. A chave anon é pública por
+        # natureza; o que ela pode fazer está em supabase/entregas.sql.
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: >-
+          flutter build web --release --no-web-resources-cdn --base-href /EyeLearn/
+          --dart-define=SUPABASE_URL="$SUPABASE_URL"
+          --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
       - uses: actions/upload-pages-artifact@v3
         with:

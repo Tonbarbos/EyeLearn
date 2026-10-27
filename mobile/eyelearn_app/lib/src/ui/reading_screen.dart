@@ -58,6 +58,14 @@ class _ReadingScreenState extends State<ReadingScreen> {
   String? _warning;
   String? _error;
 
+  /// Segundos que faltam para a leitura começar sozinha; `0` depois.
+  ///
+  /// Não há botão de começar: a criança chega da calibração e o texto já
+  /// está na tela. A contagem dá tempo de achar a primeira palavra, e a
+  /// gravação começa sozinha no fim dela.
+  int _countdown = 3;
+  Timer? _countdownTimer;
+
   @override
   void initState() {
     super.initState();
@@ -68,10 +76,19 @@ class _ReadingScreenState extends State<ReadingScreen> {
       // cima e de baixo.
       boundsDeg: (w: 20.0, h: 30.0),
     );
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _countdown--);
+      if (_countdown <= 0) {
+        timer.cancel();
+        _start();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _subscription?.cancel();
     // Deixar a câmera ligada depois de sair da tela é, além de desperdício de
     // bateria, uma captura que ninguém pediu.
@@ -178,12 +195,23 @@ class _ReadingScreenState extends State<ReadingScreen> {
                   if (_warning != null || _error != null)
                     const SizedBox(height: 14),
                   PrimaryButton(
-                    label: _capturing ? 'Terminei de ler' : 'Começar',
+                    key: const Key('reading-button'),
+                    label: _capturing
+                        ? 'Terminei de ler'
+                        : _error != null
+                            ? 'Tentar de novo'
+                            : 'Começa em $_countdown…',
                     icon: _capturing
                         ? Icons.check_rounded
-                        : Icons.play_arrow_rounded,
+                        : _error != null
+                            ? Icons.refresh_rounded
+                            : Icons.hourglass_top_rounded,
                     colour: _capturing ? Palette.green : Palette.brand,
-                    onPressed: _capturing ? _finish : _start,
+                    onPressed: _capturing
+                        ? _finish
+                        : _error != null
+                            ? _start
+                            : null,
                   ),
                 ],
               ),

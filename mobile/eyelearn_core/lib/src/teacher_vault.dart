@@ -16,6 +16,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'delivery.dart';
 import 'kdf.dart';
 import 'roster.dart';
 import 'sealing.dart';
@@ -268,6 +269,9 @@ class VaultClass {
   /// As sessões como chegaram, para a cópia de segurança não perder nada.
   final List<Map<String, dynamic>> sessionPayloads;
 
+  /// A última entrega já buscada na caixa, para buscar só as novas.
+  int deliveryCursor;
+
   VaultClass({
     required this.uid,
     required this.name,
@@ -277,6 +281,7 @@ class VaultClass {
     List<VaultStudent>? students,
     List<VaultActivity>? activities,
     List<Map<String, dynamic>>? sessionPayloads,
+    this.deliveryCursor = 0,
   })  : students = students ?? [],
         activities = activities ?? [],
         sessionPayloads = sessionPayloads ?? [];
@@ -298,6 +303,7 @@ class VaultClass {
         sessionPayloads: [
           for (final s in json['sessions'] as List) s as Map<String, dynamic>,
         ],
+        deliveryCursor: (json['delivery_cursor'] as int?) ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -309,6 +315,7 @@ class VaultClass {
         'students': [for (final s in students) s.toJson()],
         'activities': [for (final a in activities) a.toJson()],
         'sessions': sessionPayloads,
+        if (deliveryCursor > 0) 'delivery_cursor': deliveryCursor,
       };
 
   /// Alunos pelo nome completo, como o painel lista.
@@ -403,11 +410,17 @@ class TeacherVault {
   String teacherName;
   final List<VaultClass> classes;
 
+  /// Par de chaves das entregas: a pública vai no link, a privada fica aqui
+  /// (e na cópia de segurança). Ver `delivery.dart`.
+  DeliveryKeyPair deliveryKeys;
+
   TeacherVault({
     required this.username,
     required this.teacherName,
     List<VaultClass>? classes,
-  }) : classes = classes ?? [];
+    DeliveryKeyPair? deliveryKeys,
+  })  : classes = classes ?? [],
+        deliveryKeys = deliveryKeys ?? DeliveryKeyPair.generate();
 
   factory TeacherVault.create(String username, String teacherName) {
     final user = username.trim();
@@ -429,6 +442,10 @@ class TeacherVault {
     return TeacherVault(
       username: json['username'] as String,
       teacherName: json['teacher_name'] as String,
+      // Cofre de antes das entregas: ganha um par novo ao abrir.
+      deliveryKeys: json['delivery_key'] == null
+          ? null
+          : DeliveryKeyPair.fromPrivateHex(json['delivery_key'] as String),
       classes: [
         for (final c in json['classes'] as List)
           VaultClass.fromJson(c as Map<String, dynamic>),
@@ -441,6 +458,7 @@ class TeacherVault {
         'format_version': vaultFormatVersion,
         'username': username,
         'teacher_name': teacherName,
+        'delivery_key': deliveryKeys.privateKeyHex,
         'classes': [for (final c in classes) c.toJson()],
       };
 
@@ -689,6 +707,7 @@ class TeacherVault {
       iterations.isEmpty ? pinIterations : iterations.first,
       [for (final e in entries) e.join(',')].join(';'),
       activities.join(';'),
+      deliveryKeys.publicKeyText,
     ].join('|');
   }
 
@@ -738,6 +757,40 @@ class TeacherVault {
     if (duplicate) return ImportOutcome.duplicate;
     owner.sessionPayloads.add(payload);
     return ImportOutcome.imported;
+  }
+
+  /// Importa as entregas buscadas na caixa: cada uma é uma sessão cifrada
+  /// para este cofre (ver `delivery.dart`). As que não abrem -- de outro
+  /// professor, ou corrompidas -- entram em `unreadable`.
+  ImportReport importDeliveries(
+    VaultClass target,
+    List<({int id, String blob})> deliveries,
+  ) {
+    final report = ImportReport();
+    for (final d in deliveries) {
+      final name = 'entrega ${d.id}';
+      try {
+        final payload =
+            jsonDecode(utf8.decode(openDelivery(d.blob, deliveryKeys)))
+                as Map<String, dynamic>;
+        switch (importSession(payload)) {
+          case ImportOutcome.imported:
+            report.imported.add(name);
+          case ImportOutcome.duplicate:
+            report.duplicates.add(name);
+        }
+      } on UnknownStudentCode catch (error) {
+        report.unknownCodes.add(error.code);
+      } on ActivityMismatch {
+        report.wrongActivity.add(name);
+      } on FormatException {
+        report.unreadable.add(name);
+      } on TypeError {
+        report.unreadable.add(name);
+      }
+      if (d.id > target.deliveryCursor) target.deliveryCursor = d.id;
+    }
+    return report;
   }
 
   /// Importa vários arquivos sem parar no primeiro problema: perder onze

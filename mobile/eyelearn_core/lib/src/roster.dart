@@ -155,12 +155,17 @@ class Roster {
   final List<RosterStudent> students;
   final List<HomeworkActivity> activities;
 
+  /// Chave pública do professor para as entregas (`delivery.dart`); `null`
+  /// em link sem ela, e aí a sessão só sai por arquivo.
+  final String? deliveryKey;
+
   const Roster({
     required this.className,
     required this.classUid,
     required this.exportedAt,
     required this.students,
     this.activities = const [],
+    this.deliveryKey,
   });
 
   /// Lê o pacote já decifrado (o JSON compacto do painel).
@@ -228,7 +233,7 @@ class Roster {
   ///
   /// Texto com separadores, não JSON, para o link ficar curto:
   ///
-  ///     4|turma|uid|dia|iterações|alunos|atividades
+  ///     4|turma|uid|dia|iterações|alunos|atividades|chave
   ///
   /// * alunos, separados por `;`: `código,nome de exibição,PIN`, em que o PIN
   ///   é a etiqueta curta de `compactPinTag` (quatro bytes de PBKDF2, sal
@@ -239,12 +244,17 @@ class Roster {
   ///   1970-01-01 e o fuso em minutos -- o prazo é sempre o fim do dia,
   ///   23:59:59, no fuso do professor.
   ///
+  /// * chave: a pública de entrega do professor (opcional).
+  ///
   /// Quatro bytes de PIN bastam: quem tem o link pode testar as dez mil
   /// combinações de quatro dígitos com qualquer tamanho de hash. O que
   /// protege o PIN é o bloqueio depois de erros seguidos, na tela.
   factory Roster.fromCompact(String source) {
     final fields = source.split(_sep);
-    if (fields.length != 7 || fields[0] != '$compactFormatVersion') {
+    // Sétimo campo opcional: a chave de entrega, que veio depois.
+    if (fields.length < 7 ||
+        fields.length > 8 ||
+        fields[0] != '$compactFormatVersion') {
       throw const FormatException(
           'link de turma de outra versão; peça ao professor um link novo');
     }
@@ -278,6 +288,7 @@ class Roster {
       exportedAt: _utcDay(int.parse(fields[3])).toIso8601String(),
       students: List.unmodifiable(students),
       activities: List.unmodifiable(activities),
+      deliveryKey: fields.length > 7 && fields[7].isNotEmpty ? fields[7] : null,
     );
   }
 

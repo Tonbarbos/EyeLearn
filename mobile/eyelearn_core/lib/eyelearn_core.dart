@@ -19,6 +19,7 @@ library;
 
 export 'src/calibration.dart';
 export 'src/class_comparison.dart';
+export 'src/delivery.dart';
 export 'src/dwell_calibration.dart';
 export 'src/events.dart';
 export 'src/face_landmarks.dart';
