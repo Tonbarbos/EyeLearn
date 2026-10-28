@@ -21,11 +21,16 @@ class GazeHeatmapView extends StatelessWidget {
   /// Largura do desenho; a altura segue a proporção da tela.
   final double width;
 
+  /// O percurso, quando há: dá o tempo com o olhar fora da tela, que o mapa
+  /// (só a tela) não mostra.
+  final GazePath? path;
+
   const GazeHeatmapView({
     super.key,
     required this.heatmap,
     required this.task,
     this.width = 220,
+    this.path,
   });
 
   @override
@@ -65,6 +70,14 @@ class GazeHeatmapView extends StatelessWidget {
               : '${(100 * onText).round()}% do tempo de olhar sobre o texto',
           style: AppType.body.copyWith(fontSize: 13.5, color: Palette.inkMuted),
         ),
+        if (path case final p? when !p.isEmpty)
+          Text(
+            '${(100 * p.offScreenFraction(heatmap.halfWidth, heatmap.halfHeight)).round()}% '
+            'do tempo olhando fora da tela',
+            key: const Key('off-screen-share'),
+            style:
+                AppType.body.copyWith(fontSize: 13.5, color: Palette.inkMuted),
+          ),
       ],
     );
   }
@@ -339,8 +352,27 @@ class _ReplayPainter extends CustomPainter {
           (p.x + halfWidth) / (2 * halfWidth) * size.width,
           (p.y + halfHeight) / (2 * halfHeight) * size.height,
         );
-    // O rastro: o último segundo de leitura, mais forte perto do agora.
-    final trail = path.between(now - 1.0, now);
+    bool inside(({double x, double y}) p) =>
+        p.x.abs() <= halfWidth && p.y.abs() <= halfHeight;
+    final sample = path.sampleAt(now);
+
+    if (sample?.state == GazeSampleState.noFace) {
+      // Rosto fora da câmera: a tela apaga.
+      canvas.drawRect(Offset.zero & size,
+          Paint()..color = const Color(0xFF8A8FA8).withValues(alpha: 0.55));
+      _label(canvas, size, 'rosto fora da câmera', Palette.ink);
+      return;
+    }
+    final at = path.at(now);
+    final away = at != null && !inside(at);
+    if (away) {
+      canvas.drawRect(Offset.zero & size,
+          Paint()..color = Palette.ink.withValues(alpha: 0.14));
+    }
+
+    // O rastro: o último segundo de leitura, mais forte perto do agora. Só o
+    // que caiu na tela; o olhar fora dela aparece na borda.
+    final trail = path.between(now - 1.0, now).where(inside).toList();
     for (var i = 0; i < trail.length; i++) {
       final age = (i + 1) / trail.length;
       canvas.drawCircle(
@@ -349,11 +381,57 @@ class _ReplayPainter extends CustomPainter {
         Paint()..color = Palette.amber.withValues(alpha: 0.12 + 0.4 * age),
       );
     }
-    final at = path.at(now);
     if (at == null) return;
-    final c = place(at);
+    if (!away) {
+      final c = place(at);
+      canvas.drawCircle(c, 9, Paint()..color = Colors.white);
+      canvas.drawCircle(c, 7, Paint()..color = Palette.amber);
+      return;
+    }
+
+    // Olhar fora da tela: bolinha vermelha presa na borda, com uma seta
+    // apontando para onde o olhar foi.
+    final target = place(at);
+    const inset = 24.0;
+    final c = Offset(
+      target.dx.clamp(inset, size.width - inset).toDouble(),
+      target.dy.clamp(inset, size.height - inset).toDouble(),
+    );
+    final direction = target - c;
+    final unit = direction.distance == 0
+        ? const Offset(0, -1)
+        : direction / direction.distance;
+    final normal = Offset(-unit.dy, unit.dx);
+    final tip = c + unit * 15;
+    canvas.drawPath(
+      Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..lineTo((c + unit * 8 + normal * 5).dx, (c + unit * 8 + normal * 5).dy)
+        ..lineTo((c + unit * 8 - normal * 5).dx, (c + unit * 8 - normal * 5).dy)
+        ..close(),
+      Paint()..color = Palette.coral,
+    );
     canvas.drawCircle(c, 9, Paint()..color = Colors.white);
-    canvas.drawCircle(c, 7, Paint()..color = Palette.amber);
+    canvas.drawCircle(c, 7, Paint()..color = Palette.coral);
+    _label(canvas, size, 'olhando fora da tela', Palette.coral);
+  }
+
+  static void _label(Canvas canvas, Size size, String text, Color colour) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: AppType.label.copyWith(fontSize: 12, color: colour),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 16);
+    final box = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height - 22),
+      width: painter.width + 16,
+      height: painter.height + 8,
+    );
+    canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(10)),
+        Paint()..color = Colors.white.withValues(alpha: 0.92));
+    painter.paint(canvas, box.topLeft + const Offset(8, 4));
   }
 
   @override

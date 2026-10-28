@@ -28,8 +28,9 @@ void main() {
   test('posição num instante e o rastro', () {
     final path = GazePath.fromTrace(trace, rateHz: 30);
     expect(path.at(0.5)!.x, closeTo(15 / 7, 0.06));
-    // Na amostra perdida, vale a anterior, se for recente.
-    expect(path.at(31 / 30 + 0.001)!.x, closeTo(30 / 7, 0.06));
+    // Na amostra perdida não há bolinha, e o motivo fica registrado.
+    expect(path.at(31 / 30 + 0.001), isNull);
+    expect(path.sampleAt(31 / 30 + 0.001)!.state, GazeSampleState.eyesClosed);
     expect(path.between(0.5, 1.0).length, 16);
   });
 
@@ -48,5 +49,71 @@ void main() {
     );
     final back = Session.fromJsonString(session.toJsonString());
     expect(back.gazePath!.t, session.gazePath!.t);
+  });
+
+  group('olhar fora da tela', () {
+    // Mapa simples: deslocamento x 40 = graus.
+    final calibration = GazeCalibration.fit([
+      for (final (x, y) in [
+        (0.0, 0.0),
+        (-10.0, -10.0),
+        (10.0, -10.0),
+        (10.0, 10.0),
+        (-10.0, 10.0)
+      ])
+        CalibrationSample(
+            targetX: x, targetY: y, offsetX: x / 40, offsetY: y / 40),
+    ]);
+    FaceFrame look(double t, double x, double y, {bool closed = false}) =>
+        syntheticFaceFrame(
+          offsetX: x / 40,
+          offsetY: y / 40,
+          timestamp: t,
+          opennessFraction: closed ? 0.02 : defaultOpenness,
+        );
+
+    test('o gravador guarda o olhar fora dos limites e o motivo das perdas',
+        () {
+      final recorder =
+          GazeRecorder(calibration: calibration, boundsDeg: (w: 20.0, h: 30.0));
+      var t = 0.0;
+      for (var i = 0; i < 30; i++, t += 1 / 15) {
+        recorder.add(look(t, 0, 0));
+      }
+      for (var i = 0; i < 15; i++, t += 1 / 15) {
+        recorder.add(look(t, 35, 0)); // olhou para o lado, fora do celular
+      }
+      for (var i = 0; i < 5; i++, t += 1 / 15) {
+        recorder.add(look(t, 0, 0, closed: true));
+      }
+      for (var i = 0; i < 5; i++, t += 1 / 15) {
+        recorder.add(faceAbsentFrame(timestamp: t));
+      }
+      recorder.add(look(t, 0, 0));
+
+      // Na análise, o olhar fora dos limites é perdido...
+      expect(recorder.build().x.where((v) => v.isNaN).length, 25);
+      // ...no time-lapse, fica com a posição.
+      final path = recorder.path();
+      expect(path.x[35], closeTo(35, 0.2));
+      expect(path.state[35], GazeSampleState.gaze);
+      expect(path.state[47], GazeSampleState.eyesClosed);
+      expect(path.state[52], GazeSampleState.noFace);
+      // 1 s fora em 3,33 s com o rosto na câmera (sem contar o rosto fora).
+      expect(path.offScreenFraction(14, 24), closeTo(1 / 3.33, 0.03));
+
+      final back = GazePath.fromJson(path.toJson());
+      expect(back.state, path.state);
+    });
+
+    test('percurso sem motivos (sessão anterior) lê perdas como piscada', () {
+      final old = GazePath.fromJson({
+        't': [0, 0.1, 0.2],
+        'x': [1.0, null, 2.0],
+        'y': [0.0, null, 0.0],
+      });
+      expect(old.state[1], GazeSampleState.eyesClosed);
+      expect(old.state[2], GazeSampleState.gaze);
+    });
   });
 }

@@ -37,6 +37,7 @@ ExportedSession exportSession({
   required ModelArtifact artifact,
   GazeHeatmap? heatmap,
   double? outOfPositionRatio,
+  GazePath? gazePath,
 }) {
   final session = Session.fromAnalysis(
     participantCode: participantCode,
@@ -50,7 +51,7 @@ ExportedSession exportSession({
     artifact: artifact,
     heatmap: heatmap,
     outOfPositionRatio: outOfPositionRatio,
-    gazePath: GazePath.fromTrace(trace),
+    gazePath: gazePath ?? GazePath.fromTrace(trace),
   );
   return ExportedSession(
     session: session,

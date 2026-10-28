@@ -142,7 +142,7 @@ void main() {
         calibration: calibration,
         passage: passageById('text'),
         postureReference: reference,
-        onFinished: (_, __, ___, out) => outOfPosition = out,
+        onFinished: (r) => outOfPosition = r.outOfPosition,
       ),
     ));
     await _advance(tester, const Duration(seconds: 5));

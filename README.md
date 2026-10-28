@@ -31,8 +31,10 @@ A atividade é **dever de casa** (celular não entra na escola):
    **envia a sessão sozinho ao professor**, cifrada para ele.
 4. O professor abre a turma no painel: as sessões chegam sozinhas, e cada
    criança aparece comparada com a turma ou com a base ETDD70, com o mapa de
-   onde o olhar ficou e um time-lapse da bolinha do olhar andando pelo texto
-   (que dá para baixar em GIF).
+   onde o olhar ficou e um time-lapse da bolinha do olhar andando pela tela
+   (que dá para baixar em GIF). O time-lapse mostra também quando o olhar saiu
+   do celular (bolinha vermelha na borda, apontando para onde foi) e quando o
+   rosto saiu da câmera.
 
 A criança não vê resultado nenhum: o aplicativo diz que ela terminou, e é tudo.
 

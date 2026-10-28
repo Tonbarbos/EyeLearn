@@ -22,6 +22,31 @@ import 'widgets.dart';
 import '../activity/passages.dart';
 import '../gaze/gaze_source.dart';
 
+/// O que a leitura entrega ao terminar.
+class ReadingResult {
+  /// O percurso da análise (o olhar fora da área do texto vira `NaN`).
+  final GazeTrace trace;
+  final RecordingQuality quality;
+
+  /// Onde o texto ficou na tela, em graus (esquerda, topo, direita, base),
+  /// para o painel desenhar as linhas sob o olhar.
+  final List<double>? textArea;
+
+  /// Fração do tempo fora da posição da calibração; `null` sem referência.
+  final double? outOfPosition;
+
+  /// O percurso reduzido para o time-lapse, com o olhar fora da tela.
+  final GazePath path;
+
+  const ReadingResult({
+    required this.trace,
+    required this.quality,
+    required this.textArea,
+    required this.outOfPosition,
+    required this.path,
+  });
+}
+
 class ReadingScreen extends StatefulWidget {
   final GazeSource channel;
   final GazeCalibration calibration;
@@ -31,12 +56,8 @@ class ReadingScreen extends StatefulWidget {
   /// a criança sai dessa posição e conta quanto tempo ficou fora.
   final PostureReference? postureReference;
 
-  /// Chamada ao final, com o percurso, a qualidade da captura, onde o texto
-  /// ficou na tela, em graus (esquerda, topo, direita, base) -- para o mapa
-  /// de calor mostrar as linhas sob o olhar -- e a fração do tempo fora da
-  /// posição da calibração (`null` sem referência).
-  final void Function(GazeTrace trace, RecordingQuality quality,
-      List<double>? textArea, double? outOfPosition) onFinished;
+  /// Chamada ao final, com o que foi gravado.
+  final void Function(ReadingResult result) onFinished;
 
   /// Chamada quando a captura começa.
   ///
@@ -194,8 +215,13 @@ class _ReadingScreenState extends State<ReadingScreen> {
     await widget.channel.stop();
 
     setState(() => _capturing = false);
-    widget.onFinished(_recorder.build(), _recorder.quality(), _textArea(),
-        _monitor?.outRatio);
+    widget.onFinished(ReadingResult(
+      trace: _recorder.build(),
+      quality: _recorder.quality(),
+      textArea: _textArea(),
+      outOfPosition: _monitor?.outRatio,
+      path: _recorder.path(),
+    ));
   }
 
   @override

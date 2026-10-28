@@ -433,7 +433,13 @@ void main() {
     session['heatmap'] =
         GazeHeatmap.fromTrace(trace, textArea: [-10.0, -8.0, 10.0, 4.0])
             .toJson();
-    session['gaze_path'] = GazePath.fromTrace(trace).toJson();
+    // O mesmo olhar, com o último quarto fora do celular, à direita.
+    session['gaze_path'] = GazePath.sample(
+      t: trace.t,
+      x: [for (var i = 0; i < 100; i++) i >= 75 ? 35.0 : trace.x[i]],
+      y: trace.y,
+      state: [for (final _ in trace.t) GazeSampleState.gaze],
+    ).toJson();
     platform.nextFiles = [(name: 'uma.json', text: jsonEncode(session))];
     await _tap(tester, find.text('Sessões'));
     await _tap(tester, find.text('Importar arquivos'));
@@ -443,6 +449,10 @@ void main() {
     // O time-lapse do olhar, e o GIF dele.
     await _tap(tester, find.text('Mapa do olhar'));
     expect(find.byKey(const Key('heatmap')), findsOneWidget);
+    final share =
+        tester.widget<Text>(find.byKey(const Key('off-screen-share'))).data!;
+    expect(share, endsWith('% do tempo olhando fora da tela'));
+    expect(int.parse(share.split('%').first), inInclusiveRange(22, 28));
     await _tap(tester, find.text('Time-lapse'));
     expect(find.byKey(const Key('gaze-replay')), findsOneWidget);
     await _tap(tester, find.byKey(const Key('gaze-replay-gif')));

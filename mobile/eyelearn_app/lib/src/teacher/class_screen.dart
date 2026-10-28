@@ -456,7 +456,9 @@ class _BaseComparisonViewState extends State<BaseComparisonView> {
               if (session.heatmap != null) ...[
                 Center(
                   child: GazeHeatmapView(
-                      heatmap: session.heatmap!, task: session.task),
+                      heatmap: session.heatmap!,
+                      task: session.task,
+                      path: session.gazePath),
                 ),
                 const SizedBox(height: 14),
               ],
@@ -1207,7 +1209,8 @@ class _GazeViewsState extends State<_GazeViews> {
             onSaveGif: _saveGif,
           )
         else if (s.heatmap != null)
-          GazeHeatmapView(heatmap: s.heatmap!, task: s.task, width: 240)
+          GazeHeatmapView(
+              heatmap: s.heatmap!, task: s.task, width: 240, path: path)
         else
           const Text('Esta sessão não tem o percurso do olhar.'),
       ],

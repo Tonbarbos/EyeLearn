@@ -15,7 +15,9 @@ import 'package:eyelearn_core/eyelearn_core.dart';
 
 /// Paleta: fundo, barras do texto, borda do texto, bolinha, borda branca,
 /// quatro tons do rastro (âmbar sobre o fundo), trilho e avanço da barra de
-/// progresso. O resto é preenchimento.
+/// progresso, e as cores dos estados: bolinha vermelha (olhar fora da tela),
+/// fundo e barras escurecidos (fora da tela) e fundo cinza (rosto fora da
+/// câmera). Sem transparência no GIF, os tons já vêm misturados.
 const List<int> _palette = [
   0xFFFDF8, // 0 fundo (Palette.readingSurface)
   0xD5D3E3, // 1 linhas do texto
@@ -29,7 +31,10 @@ const List<int> _palette = [
   0xE6E5F2, // 9 trilho do progresso (Palette.line)
   0x5B4BE8, // 10 avanço (Palette.brand)
   0x1C2033, // 11 tinta
-  0x000000, 0x000000, 0x000000, 0x000000,
+  0xF2594B, // 12 bolinha fora da tela (Palette.coral)
+  0xDFDEDC, // 13 fundo escurecido: olhar fora da tela
+  0xBBBACA, // 14 linhas escurecidas
+  0xBFC0CC, // 15 fundo cinza: rosto fora da câmera
 ];
 
 /// Monta o GIF do percurso.
@@ -89,6 +94,9 @@ Uint8List replayGif({
   }
   rect(background, 0, height, width, h, 9);
 
+  bool inside(({double x, double y}) p) =>
+      p.x.abs() <= halfWidth && p.y.abs() <= halfHeight;
+
   void disc(Uint8List buf, int cx, int cy, double r, int colour) {
     final ri = r.ceil();
     for (var y = cy - ri; y <= cy + ri; y++) {
@@ -121,17 +129,50 @@ Uint8List replayGif({
   for (var f = 0; f < count; f++) {
     final now = math.min(duration, f * step);
     frame.setAll(0, background);
-    // Rastro: o último segundo de leitura, mais forte perto do agora.
-    final trail = path.between(now - 1.0, now);
-    for (var i = 0; i < trail.length; i++) {
-      final age = (i + 1) / trail.length;
-      disc(frame, px(trail[i].x), py(trail[i].y), 2 + 3 * age,
-          5 + (age * 3.99).floor());
-    }
+    final sample = path.sampleAt(now);
     final at = path.at(now);
-    if (at != null) {
+    final noFace = sample?.state == GazeSampleState.noFace;
+    final away = at != null && !inside(at);
+    if (noFace || away) {
+      // Rosto fora da câmera: fundo cinza. Olhar fora da tela: escurecido.
+      final bg = noFace ? 15 : 13;
+      for (var i = 0; i < width * height; i++) {
+        final c = frame[i];
+        if (c == 0) {
+          frame[i] = bg;
+        } else if (c == 1) {
+          frame[i] = 14;
+        }
+      }
+    }
+    if (!noFace) {
+      // Rastro: o último segundo de leitura, mais forte perto do agora. Só
+      // o que caiu na tela.
+      final trail = path.between(now - 1.0, now).where(inside).toList();
+      for (var i = 0; i < trail.length; i++) {
+        final age = (i + 1) / trail.length;
+        disc(frame, px(trail[i].x), py(trail[i].y), 2 + 3 * age,
+            5 + (age * 3.99).floor());
+      }
+    }
+    if (at != null && !away) {
       disc(frame, px(at.x), py(at.y), 8, 4);
       disc(frame, px(at.x), py(at.y), 6.5, 3);
+    } else if (away) {
+      // Presa na borda, com uma seta de bolinhas para onde o olhar foi.
+      const inset = 24;
+      final tx = px(at.x), ty = py(at.y);
+      final cx = tx.clamp(inset, width - inset);
+      final cy = ty.clamp(inset, height - inset);
+      final dx = (tx - cx).toDouble(), dy = (ty - cy).toDouble();
+      final len = math.sqrt(dx * dx + dy * dy);
+      final ux = len == 0 ? 0.0 : dx / len, uy = len == 0 ? -1.0 : dy / len;
+      for (var k = 1; k <= 3; k++) {
+        disc(frame, (cx + ux * (8 + 4 * k)).round(),
+            (cy + uy * (8 + 4 * k)).round(), 4.2 - k, 12);
+      }
+      disc(frame, cx, cy, 8, 4);
+      disc(frame, cx, cy, 6.5, 12);
     }
     final done = duration == 0 ? width : (now / duration * width).round();
     rect(frame, 0, height, done, h, 10);

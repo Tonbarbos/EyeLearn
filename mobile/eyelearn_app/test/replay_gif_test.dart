@@ -5,18 +5,28 @@ import 'package:eyelearn_app/src/teacher/replay_gif.dart';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Leitura sintética: o olhar varre seis linhas, com uma piscada no meio.
+/// Leitura sintética: o olhar varre seis linhas, com uma piscada, uma
+/// olhada para fora do celular (à direita, de 6 a 7,5 s) e o rosto fora da
+/// câmera (de 9 a 10 s).
 GazePath _reading() {
   final t = <double>[], x = <double>[], y = <double>[];
+  final state = <GazeSampleState>[];
   for (var i = 0; i < 30 * 12; i++) {
     final s = i / 30;
     final line = (s / 2).floor();
     t.add(s);
     final blink = s > 5 && s < 5.2;
-    x.add(blink ? double.nan : -9 + 9 * (s % 2));
-    y.add(blink ? double.nan : -8 + 2.4 * line + 0.3 * math.sin(s * 9));
+    final away = s >= 6 && s < 7.5;
+    final noFace = s >= 9 && s < 10;
+    x.add(away ? 32 : -9 + 9 * (s % 2));
+    y.add(away ? -4 : -8 + 2.4 * line + 0.3 * math.sin(s * 9));
+    state.add(blink
+        ? GazeSampleState.eyesClosed
+        : noFace
+            ? GazeSampleState.noFace
+            : GazeSampleState.gaze);
   }
-  return GazePath.fromTrace(GazeTrace(t: t, x: x, y: y));
+  return GazePath.sample(t: t, x: x, y: y, state: state);
 }
 
 void main() {
