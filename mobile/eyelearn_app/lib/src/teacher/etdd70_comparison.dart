@@ -126,6 +126,8 @@ Future<void> showEtdd70Comparison(
   await showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
+      // No celular, a margem padrão do diálogo come um terço da largura.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
       title: Text('$studentName × ETDD70'),
       content: SizedBox(
         width: 720,
@@ -183,55 +185,109 @@ class _ComparisonBody extends StatelessWidget {
               style: AppType.subtitle),
           const SizedBox(height: 8),
           ComparisonChart(
-            scores: {
-              for (final r in comparison.rows)
-                r.feature: r.zTypical.clamp(-6.0, 6.0),
-            },
+            scores: {for (final r in comparison.rows) r.feature: r.zTypical},
+            reference: 'às crianças sem dislexia da base',
           ),
           const SizedBox(height: 14),
-          Table(
-            key: const Key('etdd70-table'),
-            columnWidths: const {0: FlexColumnWidth(3)},
-            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-            children: [
-              TableRow(
-                children: [
-                  for (final h in [
-                    'Característica',
-                    'Sessão',
-                    'Sem dislexia',
-                    'Com dislexia',
-                    'Desvios',
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Text(h, style: AppType.label),
-                    ),
-                ],
-              ),
-              for (final r in comparison.rows)
-                TableRow(
-                  children: [
-                    Text(etdd70FeatureLabels[r.feature] ?? r.feature,
-                        style: AppType.body.copyWith(fontSize: 13.5)),
-                    Text(n(r.value)),
-                    Text('${n(r.typical.mean)} ± ${n(r.typical.std)}'),
-                    Text('${n(r.dyslexic.mean)} ± ${n(r.dyslexic.std)}'),
-                    Text(
-                      '${r.zTypical >= 0 ? '+' : '−'}'
-                      '${r.zTypical.abs().toStringAsFixed(1)}',
-                      style: TextStyle(
-                        fontWeight: r.zTypical.abs() > 3
-                            ? FontWeight.w700
-                            : FontWeight.w400,
+          LayoutBuilder(
+            builder: (context, constraints) => constraints.maxWidth < 520
+                ? _FeatureList(comparison: comparison, format: n)
+                : Table(
+                    key: const Key('etdd70-table'),
+                    columnWidths: const {0: FlexColumnWidth(3)},
+                    defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                    children: [
+                      TableRow(
+                        children: [
+                          for (final h in [
+                            'Característica',
+                            'Sessão',
+                            'Sem dislexia',
+                            'Com dislexia',
+                            'Desvios',
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Text(h, style: AppType.label),
+                            ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-            ],
+                      for (final r in comparison.rows)
+                        TableRow(
+                          children: [
+                            Text(etdd70FeatureLabels[r.feature] ?? r.feature,
+                                style: AppType.body.copyWith(fontSize: 13.5)),
+                            Text(n(r.value)),
+                            Text('${n(r.typical.mean)} ± ${n(r.typical.std)}'),
+                            Text(
+                                '${n(r.dyslexic.mean)} ± ${n(r.dyslexic.std)}'),
+                            Text(
+                              '${r.zTypical >= 0 ? '+' : '−'}'
+                              '${r.zTypical.abs().toStringAsFixed(1)}',
+                              style: TextStyle(
+                                fontWeight: r.zTypical.abs() > 3
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
+}
+
+/// A tabela das características, para tela estreita: uma linha por
+/// característica, com os números embaixo do nome em vez de em colunas.
+class _FeatureList extends StatelessWidget {
+  final Etdd70Comparison comparison;
+  final String Function(double) format;
+
+  const _FeatureList({required this.comparison, required this.format});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        key: const Key('etdd70-table'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final r in comparison.rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(etdd70FeatureLabels[r.feature] ?? r.feature,
+                            style: AppType.body.copyWith(fontSize: 14.5)),
+                      ),
+                      Text(
+                        '${r.zTypical >= 0 ? '+' : '−'}'
+                        '${r.zTypical.abs().toStringAsFixed(1)}',
+                        style: AppType.body.copyWith(
+                          fontSize: 14.5,
+                          fontWeight: r.zTypical.abs() > 3
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'sessão ${format(r.value)} · sem dislexia '
+                    '${format(r.typical.mean)} ± ${format(r.typical.std)} · '
+                    'com ${format(r.dyslexic.mean)} ± ${format(r.dyslexic.std)}',
+                    style: AppType.body
+                        .copyWith(fontSize: 12.5, color: Palette.inkMuted),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
 }

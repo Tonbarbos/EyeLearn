@@ -64,8 +64,11 @@ void main() {
     gaze.faceVisible = true;
 
     // Calibrar de novo volta à bolinha de calibração.
+    // (passando de novo pela posição).
     await tester.tap(find.text('Calibrar de novo'));
     await _advance(tester, const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('positioning-message')), findsOneWidget);
+    await _advance(tester, const Duration(seconds: 3));
     expect(find.byKey(const Key('calibration-hint')), findsOneWidget);
     await _advance(tester, const Duration(seconds: 20));
     expect(find.byKey(const Key('gaze-hud')), findsOneWidget);

@@ -67,6 +67,11 @@ class Session {
   /// Onde o olhar ficou, numa grade grossa; `null` em sessão antiga.
   final GazeHeatmap? heatmap;
 
+  /// Fração da leitura feita fora da posição da calibração (celular
+  /// inclinado, rosto mais perto ou mais longe); `null` quando não medida.
+  /// Nesse trecho o olhar estimado perde precisão.
+  final double? outOfPositionRatio;
+
   const Session({
     required this.participantCode,
     required this.task,
@@ -79,6 +84,7 @@ class Session {
     required this.modelMetadata,
     this.activityCode,
     this.heatmap,
+    this.outOfPositionRatio,
   });
 
   /// Monta a sessão a partir da análise e do artefato usado.
@@ -93,6 +99,7 @@ class Session {
     required ModelArtifact artifact,
     String? activityCode,
     GazeHeatmap? heatmap,
+    double? outOfPositionRatio,
   }) =>
       Session(
         participantCode: participantCode,
@@ -110,6 +117,7 @@ class Session {
           ...artifact.metadata,
         },
         heatmap: heatmap,
+        outOfPositionRatio: outOfPositionRatio,
       );
 
   /// Se a gravação tem qualidade suficiente para ser interpretada.
@@ -139,6 +147,8 @@ class Session {
         'score': score,
         'model': modelMetadata,
         if (heatmap != null) 'heatmap': heatmap!.toJson(),
+        if (outOfPositionRatio != null)
+          'out_of_position_ratio': outOfPositionRatio,
       };
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());
@@ -170,6 +180,7 @@ class Session {
       heatmap: json['heatmap'] == null
           ? null
           : GazeHeatmap.fromJson(json['heatmap'] as Map<String, dynamic>),
+      outOfPositionRatio: (json['out_of_position_ratio'] as num?)?.toDouble(),
     );
   }
 

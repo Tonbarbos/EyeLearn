@@ -28,6 +28,7 @@ export 'src/gaze_heatmap.dart';
 export 'src/kdf.dart';
 export 'src/model.dart';
 export 'src/pipeline.dart';
+export 'src/posture.dart';
 export 'src/recorder.dart';
 export 'src/roster.dart';
 export 'src/preprocess.dart'

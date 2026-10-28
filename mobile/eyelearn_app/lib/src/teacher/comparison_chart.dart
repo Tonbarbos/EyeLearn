@@ -22,10 +22,20 @@ class ComparisonChart extends StatelessWidget {
   final Map<String, double> scores;
   final double threshold;
 
+  /// Legenda sob o gráfico: a quem os desvios se referem.
+  final String reference;
+
+  /// A barra para neste valor; o número ao lado mostra o valor de verdade.
+  /// Sem isso, um escore de +28 (sessão de câmera contra a base de
+  /// laboratório) achata todas as outras barras até sumirem.
+  final double maxAbs;
+
   const ComparisonChart({
     super.key,
     required this.scores,
     this.threshold = highlightThreshold,
+    this.reference = 'à turma',
+    this.maxAbs = 6,
   });
 
   @override
@@ -46,12 +56,12 @@ class ComparisonChart extends StatelessWidget {
           SizedBox(
             height: rows.length * 44.0 + 8,
             child: CustomPaint(
-              painter: _ChartPainter(rows, threshold),
+              painter: _ChartPainter(rows, threshold, maxAbs),
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'desvios em relação à turma · tracejado: faixa de ±'
+            'desvios em relação $reference · tracejado: faixa de ±'
             '${threshold.toStringAsFixed(1).replaceAll('.', ',')}',
             textAlign: TextAlign.center,
             style: AppType.body.copyWith(fontSize: 13, color: Palette.inkMuted),
@@ -65,8 +75,9 @@ class ComparisonChart extends StatelessWidget {
 class _ChartPainter extends CustomPainter {
   final List<(String, double)> rows;
   final double threshold;
+  final double maxAbs;
 
-  _ChartPainter(this.rows, this.threshold);
+  _ChartPainter(this.rows, this.threshold, this.maxAbs);
 
   TextPainter _text(String text, TextStyle style, double maxWidth) =>
       TextPainter(
@@ -78,12 +89,14 @@ class _ChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final labelWidth = math.min(170.0, size.width * 0.36);
-    final left = labelWidth + 12;
-    final width = size.width - left - 8;
+    final labelWidth = math.min(170.0, size.width * 0.34);
+    // Folga dos dois lados das barras para o número, que não pode cortar.
+    const numberRoom = 40.0;
+    final left = labelWidth + 8 + numberRoom;
+    final width = math.max(40.0, size.width - left - numberRoom);
     final limit = math.max(
       2.4,
-      rows.fold<double>(0, (m, r) => math.max(m, r.$2.abs())) * 1.3,
+      rows.fold<double>(0, (m, r) => math.max(m, math.min(r.$2.abs(), maxAbs))),
     );
     double x(double value) => left + (value + limit) / (2 * limit) * width;
     const rowHeight = 44.0;
@@ -105,9 +118,11 @@ class _ChartPainter extends CustomPainter {
     );
 
     for (var i = 0; i < rows.length; i++) {
-      final (label, value) = rows[i];
+      final (label, raw) = rows[i];
+      final value = raw.clamp(-maxAbs, maxAbs);
+      final clamped = value != raw;
       final centre = i * rowHeight + rowHeight / 2 + 4;
-      final flagged = value.abs() >= threshold;
+      final flagged = raw.abs() >= threshold;
 
       final name = _text(label,
           AppType.body.copyWith(fontSize: 14, color: Palette.ink), labelWidth);
@@ -136,14 +151,15 @@ class _ChartPainter extends CustomPainter {
       }
 
       final number = _text(
-        '${value >= 0 ? '+' : '−'}${value.abs().toStringAsFixed(1)}'
+        '${raw >= 0 ? '+' : '−'}'
+                '${raw.abs().toStringAsFixed(clamped ? 0 : 1)}'
             .replaceAll('.', ','),
         AppType.body.copyWith(
           fontSize: 13,
           fontWeight: flagged ? FontWeight.w700 : FontWeight.w400,
           color: flagged ? Palette.ink : Palette.inkMuted,
         ),
-        60,
+        numberRoom + 4,
       );
       final nx = value >= 0 ? x(value) + 6 : x(value) - 6 - number.width;
       number.paint(canvas, Offset(nx, centre - number.height / 2));
@@ -152,5 +168,5 @@ class _ChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ChartPainter old) =>
-      old.rows != rows || old.threshold != threshold;
+      old.rows != rows || old.threshold != threshold || old.maxAbs != maxAbs;
 }

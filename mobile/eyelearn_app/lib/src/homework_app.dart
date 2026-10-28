@@ -33,6 +33,7 @@ import 'teacher/teacher_screens.dart';
 import 'ui/calibration_screen.dart';
 import 'ui/finished_screen.dart';
 import 'ui/gaze_test_screen.dart';
+import 'ui/positioning_screen.dart';
 import 'ui/reading_screen.dart';
 import 'ui/student_login.dart';
 import 'ui/theme.dart';
@@ -890,7 +891,7 @@ class HomeworkCard extends StatelessWidget {
   }
 }
 
-enum _RunStage { calibrating, reading, finished }
+enum _RunStage { positioning, calibrating, reading, finished }
 
 /// Uma atividade, da calibração ao fim, numa rota só.
 ///
@@ -923,8 +924,9 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
   late final GazeSource _gaze = widget.environment.gaze();
   late final Passage _passage = passageById(widget.activity.task);
 
-  _RunStage _stage = _RunStage.calibrating;
+  _RunStage _stage = _RunStage.positioning;
   GazeCalibration? _calibration;
+  PostureReference? _posture;
   ExportedSession? _exported;
   DeliveryState? _delivery;
   late DateTime _startedAt;
@@ -945,8 +947,8 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
     });
   }
 
-  Future<void> _finished(
-      GazeTrace trace, RecordingQuality quality, List<double>? textArea) async {
+  Future<void> _finished(GazeTrace trace, RecordingQuality quality,
+      List<double>? textArea, double? outOfPosition) async {
     final analysis = analyse(trace, widget.model.preprocessing);
     final exported = exportSession(
       participantCode: widget.student.code,
@@ -958,6 +960,7 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
       features: analysis.features,
       artifact: widget.model,
       heatmap: GazeHeatmap.fromTrace(trace, textArea: textArea),
+      outOfPositionRatio: outOfPosition,
     );
     // Conta como feita só se a captura serviu: uma gravação ruim fica
     // pendente, e a tela final sugere repetir.
@@ -997,8 +1000,13 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
 
   @override
   Widget build(BuildContext context) => switch (_stage) {
+        _RunStage.positioning => PositioningScreen(
+            channel: _gaze,
+            onReady: () => setState(() => _stage = _RunStage.calibrating),
+          ),
         _RunStage.calibrating => CalibrationScreen(
             channel: _gaze,
+            onPostureReference: (reference) => _posture = reference,
             onTargetShown: env.onTargetShown == null
                 ? null
                 : (target) => env.onTargetShown!(_gaze, target),
@@ -1007,6 +1015,7 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
         _RunStage.reading => ReadingScreen(
             channel: _gaze,
             calibration: _calibration!,
+            postureReference: _posture,
             passage: _passage,
             onStarted: env.onReadingStarted == null
                 ? null

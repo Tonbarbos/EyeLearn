@@ -1,10 +1,10 @@
-/// Tela de calibração: a criança olha para cada bolinha até ela encher.
+/// Tela de calibração: a criança olha para cada bolinha até ela mudar de lugar.
 ///
-/// A bolinha enche com o tempo, enquanto o rosto está no quadro, depois de
-/// meio segundo para o olho chegar até ela; a medida é a mediana do que foi
-/// colhido. Desde a primeira bolinha aparece um cursor onde o aparelho acha
-/// que a criança está olhando. A regra, e por que ela não exige mais o olhar
-/// parado, está em `DwellCalibrator` (núcleo), testada sem tela.
+/// A bolinha fica parada por um tempo fixo, enquanto o rosto está no quadro:
+/// meio segundo para o olho chegar até ela e depois a coleta; a medida é a
+/// mediana do que foi colhido. A tela não mostra progresso nem cursor (ver
+/// [_TargetDot]). A regra, e por que ela não exige o olhar parado, está em
+/// `DwellCalibrator` (núcleo), testada sem tela.
 ///
 /// Nove alvos: o centro primeiro (dá o ponto de partida do cursor) e depois a
 /// volta pela tela. Mais alvos e medida mais longa por alvo são o que tira o
@@ -16,6 +16,7 @@ import 'dart:async';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter/material.dart';
 
+import 'positioning_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -60,6 +61,11 @@ class CalibrationScreen extends StatefulWidget {
   /// Chamada com a calibração ajustada, quando ela é aceitável.
   final void Function(GazeCalibration) onCalibrated;
 
+  /// Chamada junto com [onCalibrated], com a posição em que a calibração
+  /// foi feita (`null` se a captura não deu para medir), para a leitura
+  /// saber quando sair dela.
+  final void Function(PostureReference?)? onPostureReference;
+
   /// Chamada a cada alvo apresentado.
   ///
   /// Existe para que uma origem de olhar que não seja a câmera saiba para onde
@@ -72,6 +78,7 @@ class CalibrationScreen extends StatefulWidget {
     super.key,
     required this.channel,
     required this.onCalibrated,
+    this.onPostureReference,
     this.onTargetShown,
   });
 
@@ -88,9 +95,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     ],
   );
 
-  /// Cursor suavizado, em fração da tela; só para desenhar.
-  Offset? _cursor;
   String? _message;
+
+  /// Posições dos quadros medidos, para a referência da leitura.
+  final List<Posture> _postures = [];
+
+  /// Quadros seguidos com a posição ruim, e o problema do último.
+  int _badFrames = 0;
+  PositionIssue? _positionIssue;
   bool _failed = false;
 
   static double _degreesX(double f) =>
@@ -129,18 +141,24 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   void _onFrame(FaceFrame frame) {
+    // Com o rosto fora da posição, a medida não vale: a calibração espera.
+    // Alguns quadros seguidos, para um tremor no limite não travar tudo.
+    final blocking = [
+      for (final issue in assessPosition(frame))
+        if (blockingIssues.contains(issue)) issue
+    ];
+    _badFrames = blocking.isEmpty ? 0 : _badFrames + 1;
+    if (_badFrames >= 5 && blocking.first != PositionIssue.noFace) {
+      setState(() => _positionIssue = blocking.first);
+      return;
+    }
     final event = _calibrator.add(frame);
-    final cursor = _calibrator.cursor;
+    if (_calibrator.status == DwellStatus.filling) {
+      final posture = Posture.of(frame);
+      if (posture != null) _postures.add(posture);
+    }
     setState(() {
-      if (cursor == null) {
-        _cursor = null;
-      } else {
-        final target = Offset(
-          cursor.x / (2 * CalibrationScreen.degreesPerHalfWidth) + 0.5,
-          cursor.y / (2 * CalibrationScreen.degreesPerHalfHeight) + 0.5,
-        );
-        _cursor = _cursor == null ? target : Offset.lerp(_cursor, target, 0.35);
-      }
+      _positionIssue = null;
       if (event == DwellEvent.targetConfirmed) _message = null;
     });
     switch (event) {
@@ -154,10 +172,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   void _restart(String message) {
-    setState(() {
-      _message = message;
-      _cursor = null;
-    });
+    setState(() => _message = message);
+    _postures.clear();
     _calibrator.reset();
     widget.onTargetShown?.call(calibrationTargets[0]);
   }
@@ -171,6 +187,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       }
       _subscription?.cancel();
       _subscription = null;
+      widget.onPostureReference?.call(PostureReference.fromPostures(_postures));
       widget.onCalibrated(calibration);
     } on CalibrationError {
       _restart('Não deu certo. Vamos tentar outra vez!');
@@ -178,8 +195,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   String get _hint => switch (_calibrator.status) {
-        DwellStatus.filling => 'Isso! Continue olhando…',
-        DwellStatus.settling => 'Olhe para a bolinha amarela',
+        DwellStatus.filling ||
+        DwellStatus.settling =>
+          'Olhe para a bolinha amarela',
         DwellStatus.noFace => 'Não estou vendo seu rosto',
         DwellStatus.eyesClosed => 'Olhos bem abertos!',
       };
@@ -189,7 +207,6 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final done = _calibrator.done;
     final target = calibrationTargets[
         done ? calibrationTargets.length - 1 : _calibrator.index];
-    final cursor = _cursor;
 
     return Scaffold(
       // Fundo escuro em gradiente: o alvo precisa de contraste máximo.
@@ -215,7 +232,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                     child: Column(
                       children: [
                         Text(
-                          _message ?? _hint,
+                          _message ??
+                              (_positionIssue == null
+                                  ? _hint
+                                  : positionMessage(_positionIssue!)),
                           key: const Key('calibration-hint'),
                           textAlign: TextAlign.center,
                           style: AppType.title.copyWith(
@@ -227,8 +247,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                         Text(
                           _failed
                               ? ''
-                              : 'Olhe para a bolinha até ela encher. '
-                                  'Deixe a cabeça parada.',
+                              : 'Siga a bolinha com os olhos até ela mudar '
+                                  'de lugar. Deixe a cabeça parada.',
                           textAlign: TextAlign.center,
                           style: AppType.body.copyWith(
                             color: Colors.white54,
@@ -243,16 +263,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                   Positioned(
                     left: target.fractionX * constraints.maxWidth - 40,
                     top: target.fractionY * constraints.maxHeight - 40,
-                    child: _TargetDot(
-                      progress: _calibrator.progress,
-                      filling: _calibrator.status == DwellStatus.filling,
-                    ),
-                  ),
-                if (cursor != null && !_failed)
-                  Positioned(
-                    left: cursor.dx * constraints.maxWidth - 9,
-                    top: cursor.dy * constraints.maxHeight - 9,
-                    child: const IgnorePointer(child: _Cursor()),
+                    child: const _TargetDot(),
                   ),
                 Align(
                   alignment: Alignment.bottomCenter,
@@ -275,84 +286,31 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 }
 
-/// O alvo: um anel que enche conforme o olhar fica nele.
+/// O alvo: uma bolinha fixa, sem anel nem cursor.
+///
+/// O anel que enchia e o cursor provisório pareciam dizer "o aparelho está
+/// vendo seu olho aqui", mas o anel enche com o tempo (com o rosto no
+/// quadro), olhe a criança para onde olhar: a mensagem era falsa. A bolinha
+/// só diz para onde olhar.
 class _TargetDot extends StatelessWidget {
-  final double progress;
-  final bool filling;
-
-  const _TargetDot({required this.progress, required this.filling});
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 80,
-        height: 80,
-        child: CustomPaint(
-          painter: _RingPainter(progress: progress, filling: filling),
-        ),
-      );
-}
-
-class _RingPainter extends CustomPainter {
-  final double progress;
-  final bool filling;
-
-  _RingPainter({required this.progress, required this.filling});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final centre = size.center(Offset.zero);
-    // Halo, mais forte enquanto enche.
-    canvas.drawCircle(
-      centre,
-      34,
-      Paint()..color = Palette.amber.withValues(alpha: filling ? 0.22 : 0.12),
-    );
-    // Trilho do anel.
-    canvas.drawCircle(
-      centre,
-      26,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..color = Colors.white.withValues(alpha: 0.18),
-    );
-    // O quanto já encheu.
-    canvas.drawArc(
-      Rect.fromCircle(center: centre, radius: 26),
-      -1.5708,
-      progress * 6.2832,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..strokeCap = StrokeCap.round
-        ..color = Palette.amber,
-    );
-    // Miolo, que cresce junto: é para onde o olho deve ir.
-    canvas.drawCircle(
-      centre,
-      7 + 12 * progress,
-      Paint()..color = Palette.amber,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) =>
-      old.progress != progress || old.filling != filling;
-}
-
-/// Onde o aparelho acha que a criança está olhando, pelo mapa provisório.
-class _Cursor extends StatelessWidget {
-  const _Cursor();
+  const _TargetDot();
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 18,
-        height: 18,
+        width: 80,
+        height: 80,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.35),
-          border: Border.all(color: Colors.white, width: 2),
+          color: Palette.amber.withValues(alpha: 0.14),
+        ),
+        child: Container(
+          width: 26,
+          height: 26,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Palette.amber,
+          ),
         ),
       );
 }

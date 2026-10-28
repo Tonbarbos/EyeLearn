@@ -148,32 +148,40 @@ class _ComparisonTabState extends State<ComparisonTab> {
 
     return PanelBody(
       children: [
-        SegmentedButton<String>(
-          segments: [
+        // Fichas que quebram linha, e não botões segmentados: no celular os
+        // segmentos espremiam o texto em três linhas.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
             for (final task in homeworkTasks)
-              ButtonSegment(value: task, label: Text(taskLabel(task))),
+              ChoiceChip(
+                label: Text(taskLabel(task)),
+                selected: _task == task,
+                onSelected: (_) => setState(() {
+                  _task = task;
+                  _selected = null;
+                }),
+              ),
           ],
-          selected: {_task},
-          onSelectionChanged: (s) => setState(() {
-            _task = s.first;
-            _selected = null;
-          }),
         ),
         const SizedBox(height: 10),
-        SegmentedButton<String>(
+        Wrap(
           key: const Key('comparison-mode'),
-          segments: const [
-            ButtonSegment(
-                value: 'turma',
-                icon: Icon(Icons.groups_outlined),
-                label: Text('Com a turma')),
-            ButtonSegment(
-                value: 'base',
-                icon: Icon(Icons.dataset_outlined),
-                label: Text('Com a base ETDD70')),
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final (value, icon, label) in const [
+              ('turma', Icons.groups_outlined, 'Com a turma'),
+              ('base', Icons.dataset_outlined, 'Com a base ETDD70'),
+            ])
+              ChoiceChip(
+                avatar: Icon(icon, size: 18),
+                label: Text(label),
+                selected: mode == value,
+                onSelected: (_) => setState(() => _mode = value),
+              ),
           ],
-          selected: {mode},
-          onSelectionChanged: (s) => setState(() => _mode = s.first),
         ),
         const SizedBox(height: 16),
         if (mode == 'base')
@@ -262,25 +270,56 @@ class _ComparisonTabState extends State<ComparisonTab> {
             if (outliers.isEmpty)
               const Text('Ninguém fora da faixa de ±1,5 desvio nesta tarefa.')
             else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              Column(
                 children: [
                   for (final MapEntry(key: code, value: features)
                       in outliers.entries)
-                    ActionChip(
-                      avatar: Icon(
-                        Icons.visibility_outlined,
-                        size: 18,
-                        color: code == selected ? Colors.white : Palette.brand,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Material(
+                        color: code == selected
+                            ? Palette.brand
+                            : Palette.brandSoft,
+                        borderRadius: BorderRadius.circular(Shapes.chipRadius),
+                        child: InkWell(
+                          borderRadius:
+                              BorderRadius.circular(Shapes.chipRadius),
+                          onTap: () => setState(() => _selected = code),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            child: Row(
+                              children: [
+                                Icon(Icons.visibility_outlined,
+                                    size: 18,
+                                    color: code == selected
+                                        ? Colors.white
+                                        : Palette.brand),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text.rich(
+                                    TextSpan(children: [
+                                      TextSpan(
+                                          text: _nameOf(target, code),
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w700)),
+                                      TextSpan(
+                                          text:
+                                              ' · ${features.map((f) => labels[f]!.toLowerCase()).join(', ')}'),
+                                    ]),
+                                    style: AppType.body.copyWith(
+                                      fontSize: 14,
+                                      color: code == selected
+                                          ? Colors.white
+                                          : Palette.ink,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      backgroundColor:
-                          code == selected ? Palette.brand : Palette.brandSoft,
-                      labelStyle: TextStyle(
-                          color: code == selected ? Colors.white : Palette.ink),
-                      label: Text('${_nameOf(target, code)} · '
-                          '${features.map((f) => labels[f]!.toLowerCase()).join(', ')}'),
-                      onPressed: () => setState(() => _selected = code),
                     ),
                 ],
               ),
@@ -428,9 +467,9 @@ class _BaseComparisonViewState extends State<BaseComparisonView> {
                 const SizedBox(height: 8),
                 ComparisonChart(
                   scores: {
-                    for (final r in comparison.rows)
-                      r.feature: r.zTypical.clamp(-6.0, 6.0),
+                    for (final r in comparison.rows) r.feature: r.zTypical,
                   },
+                  reference: 'às crianças sem dislexia da base',
                 ),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -870,20 +909,19 @@ class SessionsTab extends StatelessWidget {
     final sessions = target.sessions.reversed.toList();
     return PanelBody(
       children: [
-        Row(
+        Text(plural(sessions.length, 'sessão', 'sessões'),
+            style: AppType.title),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
           children: [
-            Expanded(
-              child: Text(plural(sessions.length, 'sessão', 'sessões'),
-                  style: AppType.title),
-            ),
-            if (hasInbox) ...[
+            if (hasInbox)
               FilledButton.icon(
                 onPressed: () => fetchDeliveries(context, controller, target),
                 icon: const Icon(Icons.cloud_download_outlined),
                 label: const Text('Buscar entregas'),
               ),
-              const SizedBox(width: 10),
-            ],
             OutlinedButton.icon(
               onPressed: canImport ? () => _import(context) : null,
               icon: const Icon(Icons.upload_file_rounded),
@@ -911,61 +949,108 @@ class SessionsTab extends StatelessWidget {
             child: Column(
               children: [
                 for (final s in sessions)
-                  ListTile(
-                    leading: Icon(
-                      s.hasUsableQuality()
-                          ? Icons.check_circle_outline_rounded
-                          : Icons.report_gmailerrorred_rounded,
-                      color: s.hasUsableQuality()
-                          ? Palette.green
-                          : const Color(0xFFA32317),
-                    ),
-                    title: Text(_nameOf(target, s.participantCode)),
-                    subtitle: Text([
-                      taskLabel(s.task),
-                      formatDateTime(s.startedAt),
-                      if (s.activityCode != null &&
-                          !activities.containsKey(s.activityCode))
-                        'atividade apagada',
-                      if (!s.hasUsableQuality()) 'qualidade baixa',
-                    ].join(' · ')),
-                    trailing: Wrap(
-                      spacing: 4,
-                      children: [
-                        if (s.heatmap != null)
-                          IconButton(
-                            tooltip: 'Onde o olhar ficou',
-                            icon: const Icon(Icons.blur_on_rounded),
-                            onPressed: () => showDialog<void>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: Text('Onde o olhar ficou · '
-                                    '${_nameOf(target, s.participantCode)}'),
-                                content: GazeHeatmapView(
-                                    heatmap: s.heatmap!,
-                                    task: s.task,
-                                    width: 260),
-                                actions: [
-                                  FilledButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: const Text('Fechar'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        TextButton(
-                          onPressed: () => showEtdd70Comparison(
-                              context, s, _nameOf(target, s.participantCode)),
-                          child: const Text('Comparar com o ETDD70'),
-                        ),
-                      ],
-                    ),
+                  _SessionRow(
+                    session: s,
+                    name: _nameOf(target, s.participantCode),
+                    activityDeleted: s.activityCode != null &&
+                        !activities.containsKey(s.activityCode),
                   ),
               ],
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Uma sessão na lista: nome e detalhes em cima, ações embaixo. Ações ao
+/// lado, como antes, espremiam o nome numa coluna de uma palavra no celular.
+class _SessionRow extends StatelessWidget {
+  final Session session;
+  final String name;
+  final bool activityDeleted;
+
+  const _SessionRow({
+    required this.session,
+    required this.name,
+    required this.activityDeleted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = session;
+    final ok = s.hasUsableQuality();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              ok
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.report_gmailerrorred_rounded,
+              color: ok ? Palette.green : const Color(0xFFA32317),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: AppType.body.copyWith(fontSize: 16)),
+                Text(
+                  [
+                    taskLabel(s.task),
+                    formatDateTime(s.startedAt),
+                    '${s.samplingRateHz.round()} quadros/s',
+                    if (activityDeleted) 'atividade apagada',
+                    if (!ok) 'qualidade baixa',
+                    // Fora da posição da calibração, o olhar perde precisão.
+                    if ((s.outOfPositionRatio ?? 0) >= 0.1)
+                      'fora da posição em '
+                          '${(100 * s.outOfPositionRatio!).round()}% do tempo',
+                  ].join(' · '),
+                  style: AppType.body
+                      .copyWith(fontSize: 13.5, color: Palette.inkMuted),
+                ),
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    if (s.heatmap != null)
+                      TextButton.icon(
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            insetPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 24),
+                            title: Text('Onde o olhar ficou · $name'),
+                            content: GazeHeatmapView(
+                                heatmap: s.heatmap!, task: s.task, width: 240),
+                            actions: [
+                              FilledButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Fechar'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        icon: const Icon(Icons.blur_on_rounded, size: 18),
+                        label: const Text('Mapa do olhar'),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => showEtdd70Comparison(context, s, name),
+                      icon: const Icon(Icons.dataset_outlined, size: 18),
+                      label: const Text('Comparar com o ETDD70'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -21,7 +21,11 @@ A atividade é **dever de casa** (celular não entra na escola):
 1. O professor abre o painel, cria a turma, a atividade e os alunos, e copia
    o **link da turma** para o grupo das famílias.
 2. Em casa, a criança abre o link no celular, toca no próprio nome, digita o
-   PIN, olha para as bolinhas da calibração e lê. A leitura começa sozinha.
+   PIN, arruma a posição (o aplicativo diz o que corrigir: distância, celular
+   em pé na altura do rosto, cabeça reta, luz, brilho nos óculos -- sem
+   mostrar a câmera), olha para as bolinhas da calibração e lê. A leitura
+   começa sozinha; se a criança sair da posição da calibração, aparece um
+   aviso, e o painel mostra quanto tempo ela ficou fora.
 3. O celular mede o percurso do olhar (fixações, sacadas, regressões) e
    **envia a sessão sozinho ao professor**, cifrada para ele.
 4. O professor abre a turma no painel: as sessões chegam sozinhas, e cada
@@ -32,7 +36,11 @@ A criança não vê resultado nenhum: o aplicativo diz que ela terminou, e é tu
 
 No primeiro acesso o navegador baixa cerca de 35 MB (o aplicativo, o MediaPipe
 e o modelo do rosto), que ficam em cache: vale abrir o link no Wi-Fi. A câmera
-funciona melhor com boa luz de frente para o rosto e o celular apoiado.
+funciona melhor com boa luz de frente para o rosto e o celular apoiado. Em
+`#olhar` aparecem, ao vivo, os números da posição (tamanho do olho em pixels,
+ângulos da cabeça, luz, brilho, inclinação do celular); os limites ficam em
+`PositionLimits` (`mobile/eyelearn_core/lib/src/posture.dart`) e são
+estimativas, a ajustar em aparelhos reais.
 
 O passo a passo do painel está em [Painel do professor](#painel-do-professor).
 O resto deste documento é para quem quer entender ou mexer no código.

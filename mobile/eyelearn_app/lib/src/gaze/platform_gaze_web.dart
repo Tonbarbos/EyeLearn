@@ -43,14 +43,32 @@ class WebGazeSource implements GazeSource {
     }
   }
 
-  void _onFrame(JSNumber seconds, JSFloat32Array points) {
+  void _onFrame(
+      JSNumber seconds, JSFloat32Array points, JSFloat32Array? conditions) {
     final flat = points.toDart;
     if (flat.length < FaceMeshIndices.expectedCount * 3) return;
     _frames.add(
       FaceFrame(
         timestamp: seconds.toDartDouble,
         landmarks: _landmarks(flat),
+        conditions: conditions == null ? null : _conditions(conditions.toDart),
       ),
+    );
+  }
+
+  /// Na ordem de `CONDITIONS` em `web/gaze.js`; NaN é "não medido".
+  static FrameConditions? _conditions(Float32List c) {
+    if (c.length < 8) return null;
+    double? at(int i) => c[i].isFinite ? c[i].toDouble() : null;
+    return FrameConditions(
+      imageWidth: at(0),
+      imageHeight: at(1),
+      headYaw: at(2),
+      headPitch: at(3),
+      headRoll: at(4),
+      eyeLuma: at(5),
+      glare: at(6),
+      deviceTilt: at(7),
     );
   }
 

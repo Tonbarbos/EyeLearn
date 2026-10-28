@@ -431,7 +431,7 @@ void main() {
     await _tap(tester, find.text('Sessões'));
     await _tap(tester, find.text('Importar arquivos'));
     await _tap(tester, find.text('OK'));
-    expect(find.byTooltip('Onde o olhar ficou'), findsOneWidget);
+    expect(find.text('Mapa do olhar'), findsOneWidget);
 
     await _tap(tester, find.text('Leitura da turma'));
     // Uma sessão só: não há turma, e a base entra sozinha.
