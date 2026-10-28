@@ -78,8 +78,14 @@ class CalibrationScreen extends StatefulWidget {
   /// a criança olha para o alvo porque o vê, não porque alguém avisou.
   final void Function(CalibrationTarget)? onTargetShown;
 
-  /// Mostra o cursor do olhar (teste do olhar e vídeos de demonstração).
+  /// Mostra o cursor do olhar e os números do medidor (teste do olhar e
+  /// vídeos de demonstração).
   final bool showGazeCursor;
+
+  /// Mostra o medidor do movimento do olho ([_EyeMeter]). Fica também na
+  /// atividade: é a resposta de que o celular está vendo o olho se mexer,
+  /// sem apontar um lugar na tela que a criança passaria a perseguir.
+  final bool showEyeMeter;
 
   const CalibrationScreen({
     super.key,
@@ -88,6 +94,7 @@ class CalibrationScreen extends StatefulWidget {
     this.onPostureReference,
     this.onTargetShown,
     this.showGazeCursor = false,
+    this.showEyeMeter = true,
   });
 
   @override
@@ -320,7 +327,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                       looking: _calibrator.status == DwellStatus.filling,
                     ),
                   ),
-                if (widget.showGazeCursor && !_failed)
+                if ((widget.showEyeMeter || widget.showGazeCursor) && !_failed)
                   Align(
                     // Entre a linha do meio (50%) e a de baixo (85%).
                     alignment: const Alignment(0, 0.36),
@@ -331,6 +338,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                       onTarget: _calibrator.status == DwellStatus.filling,
                       knowsHorizontal: _calibrator.knowsHorizontal,
                       skipped: _calibrator.skipped,
+                      detailed: widget.showGazeCursor,
                     ),
                   ),
                 if (widget.showGazeCursor && _cursor != null && !_failed) ...[
@@ -436,13 +444,15 @@ class _TrailPainter extends CustomPainter {
   bool shouldRepaint(_TrailPainter old) => true;
 }
 
-/// Medidor do movimento do olho, só no teste do olhar.
+/// Medidor do movimento do olho.
 ///
 /// Mostra, desde a primeira bolinha, o quanto a íris saiu da posição que ela
 /// tinha olhando para o centro -- antes de existir mapa para o cursor. O
-/// anel tracejado é o mínimo que a calibração exige para contar como "foi
-/// para o lado da bolinha". Serve para ver, num celular de verdade, se o
-/// olho está sendo medido e se o limite está bom.
+/// anel é o mínimo que a calibração exige para contar como "foi para o lado
+/// da bolinha", e a bolinha do medidor fica amarela quando o olho está no
+/// alvo. Na atividade, só o desenho e uma legenda simples; no teste do
+/// olhar ([detailed]), também os números, para ajustar o limite num celular
+/// de verdade.
 class _EyeMeter extends StatelessWidget {
   final ({double x, double y})? shift;
   final List<Offset> trail;
@@ -450,6 +460,7 @@ class _EyeMeter extends StatelessWidget {
   final bool onTarget;
   final bool knowsHorizontal;
   final int skipped;
+  final bool detailed;
 
   const _EyeMeter({
     required this.shift,
@@ -458,6 +469,7 @@ class _EyeMeter extends StatelessWidget {
     required this.onTarget,
     required this.knowsHorizontal,
     required this.skipped,
+    required this.detailed,
   });
 
   @override
@@ -484,12 +496,14 @@ class _EyeMeter extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            s == null
-                ? 'movimento do olho: medindo o centro…'
-                : 'movimento do olho: x ${n(s.x)} · y ${n(s.y)} '
-                    '(mínimo ${(threshold * 100).toStringAsFixed(1).replaceAll('.', ',')}%)'
-                    '${knowsHorizontal ? '' : ' · lado ainda não aprendido'}'
-                    '${skipped > 0 ? ' · puladas: $skipped' : ''}',
+            !detailed
+                ? (s == null ? 'Medindo o seu olho…' : 'Seu olho se mexendo')
+                : s == null
+                    ? 'movimento do olho: medindo o centro…'
+                    : 'movimento do olho: x ${n(s.x)} · y ${n(s.y)} '
+                        '(mínimo ${(threshold * 100).toStringAsFixed(1).replaceAll('.', ',')}%)'
+                        '${knowsHorizontal ? '' : ' · lado ainda não aprendido'}'
+                        '${skipped > 0 ? ' · puladas: $skipped' : ''}',
             textAlign: TextAlign.center,
             style: AppType.body.copyWith(color: Colors.white54, fontSize: 12),
           ),

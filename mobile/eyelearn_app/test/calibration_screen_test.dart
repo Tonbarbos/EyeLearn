@@ -55,8 +55,9 @@ void main() {
     await _advance(tester, const Duration(seconds: 6));
     expect(_hint(tester), 'Mexa os olhos até a bolinha, sem virar a cabeça');
     expect(find.byKey(const Key('calibration-cursor')), findsNothing);
-    expect(find.byKey(const Key('eye-meter')), findsNothing,
-        reason: 'na atividade, nada de depuração');
+    // Na atividade o medidor fica, sem os números.
+    expect(find.byKey(const Key('eye-meter')), findsOneWidget);
+    expect(find.textContaining('movimento do olho:'), findsNothing);
     await _advance(tester, const Duration(seconds: 30));
     expect(calibrated, 0);
     expect(_hint(tester), startsWith('Seus olhos não foram até as bolinhas'));
