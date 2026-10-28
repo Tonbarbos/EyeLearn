@@ -17,6 +17,7 @@ import 'dart:convert';
 
 import 'features.dart';
 import 'gaze_heatmap.dart';
+import 'gaze_path.dart';
 import 'model.dart';
 
 /// Versão do formato de sessão.
@@ -72,6 +73,10 @@ class Session {
   /// Nesse trecho o olhar estimado perde precisão.
   final double? outOfPositionRatio;
 
+  /// O percurso reduzido, para o time-lapse do painel; `null` em sessão
+  /// antiga.
+  final GazePath? gazePath;
+
   const Session({
     required this.participantCode,
     required this.task,
@@ -85,6 +90,7 @@ class Session {
     this.activityCode,
     this.heatmap,
     this.outOfPositionRatio,
+    this.gazePath,
   });
 
   /// Monta a sessão a partir da análise e do artefato usado.
@@ -100,6 +106,7 @@ class Session {
     String? activityCode,
     GazeHeatmap? heatmap,
     double? outOfPositionRatio,
+    GazePath? gazePath,
   }) =>
       Session(
         participantCode: participantCode,
@@ -118,6 +125,7 @@ class Session {
         },
         heatmap: heatmap,
         outOfPositionRatio: outOfPositionRatio,
+        gazePath: gazePath,
       );
 
   /// Se a gravação tem qualidade suficiente para ser interpretada.
@@ -149,6 +157,7 @@ class Session {
         if (heatmap != null) 'heatmap': heatmap!.toJson(),
         if (outOfPositionRatio != null)
           'out_of_position_ratio': outOfPositionRatio,
+        if (gazePath != null) 'gaze_path': gazePath!.toJson(),
       };
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());
@@ -181,6 +190,9 @@ class Session {
           ? null
           : GazeHeatmap.fromJson(json['heatmap'] as Map<String, dynamic>),
       outOfPositionRatio: (json['out_of_position_ratio'] as num?)?.toDouble(),
+      gazePath: json['gaze_path'] == null
+          ? null
+          : GazePath.fromJson(json['gaze_path'] as Map<String, dynamic>),
     );
   }
 

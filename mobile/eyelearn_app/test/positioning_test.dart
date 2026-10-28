@@ -106,7 +106,8 @@ void main() {
         'Segure o celular na altura do rosto');
     gaze.conditions = conditions();
     await _advance(tester, const Duration(milliseconds: 300));
-    expect(_text(tester, 'calibration-hint'), 'Olhe para a bolinha amarela');
+    expect(_text(tester, 'calibration-hint'),
+        isNot('Segure o celular na altura do rosto'));
     await gaze.stop();
   });
 

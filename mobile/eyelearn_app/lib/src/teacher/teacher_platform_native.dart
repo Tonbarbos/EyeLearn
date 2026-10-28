@@ -36,5 +36,12 @@ class NativeTeacherPlatform implements TeacherPlatform {
       );
 
   @override
+  Future<void> saveBytes(String name, Uint8List bytes, String type) =>
+      Share.shareXFiles(
+        [XFile.fromData(bytes, name: name, mimeType: type)],
+        fileNameOverrides: [name],
+      );
+
+  @override
   Future<bool> persistStorage() async => true;
 }

@@ -92,6 +92,7 @@ class _GazeTestScreenState extends State<GazeTestScreen> {
             ? null
             : (target) => widget.onTargetShown!(_source, target),
         onCalibrated: (c) => setState(() => _calibration = c),
+        showGazeCursor: true,
       );
     }
     return GazeViewer(

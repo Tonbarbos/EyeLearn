@@ -38,6 +38,12 @@ class _FakePlatform implements TeacherPlatform {
   @override
   Future<void> saveFile(String name, String text) async => saved[name] = text;
 
+  final savedBytes = <String, Uint8List>{};
+
+  @override
+  Future<void> saveBytes(String name, Uint8List bytes, String type) async =>
+      savedBytes[name] = bytes;
+
   @override
   Future<bool> persistStorage() async => true;
 }
@@ -419,19 +425,31 @@ void main() {
 
     final session = Map<String, dynamic>.from(
         (_comparison['sessions'] as List).first as Map);
-    session['heatmap'] = GazeHeatmap.fromTrace(
-      GazeTrace(
-        t: [for (var i = 0; i < 100; i++) i / 20],
-        x: [for (var i = 0; i < 100; i++) -8.0 + (i % 20)],
-        y: [for (var i = 0; i < 100; i++) -6.0 + 2.0 * (i ~/ 20)],
-      ),
-      textArea: [-10.0, -8.0, 10.0, 4.0],
-    ).toJson();
+    final trace = GazeTrace(
+      t: [for (var i = 0; i < 100; i++) i / 20],
+      x: [for (var i = 0; i < 100; i++) -8.0 + (i % 20)],
+      y: [for (var i = 0; i < 100; i++) -6.0 + 2.0 * (i ~/ 20)],
+    );
+    session['heatmap'] =
+        GazeHeatmap.fromTrace(trace, textArea: [-10.0, -8.0, 10.0, 4.0])
+            .toJson();
+    session['gaze_path'] = GazePath.fromTrace(trace).toJson();
     platform.nextFiles = [(name: 'uma.json', text: jsonEncode(session))];
     await _tap(tester, find.text('Sessões'));
     await _tap(tester, find.text('Importar arquivos'));
     await _tap(tester, find.text('OK'));
     expect(find.text('Mapa do olhar'), findsOneWidget);
+
+    // O time-lapse do olhar, e o GIF dele.
+    await _tap(tester, find.text('Mapa do olhar'));
+    expect(find.byKey(const Key('heatmap')), findsOneWidget);
+    await _tap(tester, find.text('Time-lapse'));
+    expect(find.byKey(const Key('gaze-replay')), findsOneWidget);
+    await _tap(tester, find.byKey(const Key('gaze-replay-gif')));
+    final gif = platform.savedBytes.values.single;
+    expect(String.fromCharCodes(gif.sublist(0, 6)), 'GIF89a');
+    expect(platform.savedBytes.keys.single, endsWith('.gif'));
+    await _tap(tester, find.text('Fechar'));
 
     await _tap(tester, find.text('Leitura da turma'));
     // Uma sessão só: não há turma, e a base entra sozinha.

@@ -50,6 +50,7 @@ ExportedSession exportSession({
     artifact: artifact,
     heatmap: heatmap,
     outOfPositionRatio: outOfPositionRatio,
+    gazePath: GazePath.fromTrace(trace),
   );
   return ExportedSession(
     session: session,

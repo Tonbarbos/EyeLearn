@@ -25,6 +25,7 @@ export 'src/events.dart';
 export 'src/face_landmarks.dart';
 export 'src/features.dart';
 export 'src/gaze_heatmap.dart';
+export 'src/gaze_path.dart';
 export 'src/kdf.dart';
 export 'src/model.dart';
 export 'src/pipeline.dart';

@@ -13,6 +13,8 @@ import 'comparison_chart.dart';
 import 'etdd70_comparison.dart';
 import 'heatmap_view.dart';
 import 'panel_widgets.dart';
+import 'replay_gif.dart';
+import 'teacher_platform.dart';
 import 'teacher_controller.dart';
 
 /// Texto para o grupo das famílias. O link já leva a turma inteira.
@@ -954,6 +956,7 @@ class SessionsTab extends StatelessWidget {
                     name: _nameOf(target, s.participantCode),
                     activityDeleted: s.activityCode != null &&
                         !activities.containsKey(s.activityCode),
+                    platform: controller.environment.platform,
                   ),
               ],
             ),
@@ -969,11 +972,13 @@ class _SessionRow extends StatelessWidget {
   final Session session;
   final String name;
   final bool activityDeleted;
+  final TeacherPlatform platform;
 
   const _SessionRow({
     required this.session,
     required this.name,
     required this.activityDeleted,
+    required this.platform,
   });
 
   @override
@@ -1018,7 +1023,7 @@ class _SessionRow extends StatelessWidget {
                 Wrap(
                   spacing: 4,
                   children: [
-                    if (s.heatmap != null)
+                    if (s.heatmap != null || s.gazePath != null)
                       TextButton.icon(
                         onPressed: () => showDialog<void>(
                           context: context,
@@ -1026,8 +1031,13 @@ class _SessionRow extends StatelessWidget {
                             insetPadding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 24),
                             title: Text('Onde o olhar ficou · $name'),
-                            content: GazeHeatmapView(
-                                heatmap: s.heatmap!, task: s.task, width: 240),
+                            content: SingleChildScrollView(
+                              child: _GazeViews(
+                                session: s,
+                                name: name,
+                                platform: platform,
+                              ),
+                            ),
                             actions: [
                               FilledButton(
                                 onPressed: () => Navigator.pop(context),
@@ -1124,4 +1134,83 @@ Future<void> showImportReport(BuildContext context, ImportReport report) {
       ],
     ),
   );
+}
+
+/// O mapa de calor e o time-lapse de uma sessão, um de cada vez.
+class _GazeViews extends StatefulWidget {
+  final Session session;
+  final String name;
+  final TeacherPlatform platform;
+
+  const _GazeViews({
+    required this.session,
+    required this.name,
+    required this.platform,
+  });
+
+  @override
+  State<_GazeViews> createState() => _GazeViewsState();
+}
+
+class _GazeViewsState extends State<_GazeViews> {
+  late bool _replay = widget.session.heatmap == null;
+
+  void _saveGif(double speed) {
+    final s = widget.session;
+    final map = s.heatmap;
+    final gif = replayGif(
+      path: s.gazePath!,
+      halfWidth: map?.halfWidth ?? 14,
+      halfHeight: map?.halfHeight ?? 24,
+      textArea: map?.textArea,
+      lineFractions: passageLineFractions(s.task),
+      speed: speed,
+    );
+    final stamp = s.startedAt.toIso8601String().substring(0, 10);
+    final who =
+        widget.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    widget.platform
+        .saveBytes('eyelearn-olhar-$who-$stamp.gif', gif, 'image/gif');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.session;
+    final path = s.gazePath;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (s.heatmap != null && path != null && !path.isEmpty) ...[
+          Wrap(
+            spacing: 6,
+            children: [
+              ChoiceChip(
+                label: const Text('Mapa de calor'),
+                selected: !_replay,
+                onSelected: (_) => setState(() => _replay = false),
+              ),
+              ChoiceChip(
+                label: const Text('Time-lapse'),
+                selected: _replay,
+                onSelected: (_) => setState(() => _replay = true),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        if (_replay && path != null && !path.isEmpty)
+          GazeReplayView(
+            path: path,
+            heatmap: s.heatmap,
+            task: s.task,
+            width: 240,
+            onSaveGif: _saveGif,
+          )
+        else if (s.heatmap != null)
+          GazeHeatmapView(heatmap: s.heatmap!, task: s.task, width: 240)
+        else
+          const Text('Esta sessão não tem o percurso do olhar.'),
+      ],
+    );
+  }
 }
