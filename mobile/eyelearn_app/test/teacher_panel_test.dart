@@ -456,6 +456,12 @@ void main() {
     await _tap(tester, find.text('Time-lapse'));
     expect(find.byKey(const Key('gaze-replay')), findsOneWidget);
     await _tap(tester, find.byKey(const Key('gaze-replay-gif')));
+    // Desenhar o fundo do GIF (toImage) precisa de tempo real.
+    for (var i = 0; i < 20 && platform.savedBytes.isEmpty; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump();
+    }
     final gif = platform.savedBytes.values.single;
     expect(String.fromCharCodes(gif.sublist(0, 6)), 'GIF89a');
     expect(platform.savedBytes.keys.single, endsWith('.gif'));

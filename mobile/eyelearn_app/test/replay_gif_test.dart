@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:eyelearn_app/src/activity/passages.dart';
 import 'package:eyelearn_app/src/teacher/replay_gif.dart';
 import 'package:eyelearn_core/eyelearn_core.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,7 +35,6 @@ void main() {
     final gif = replayGif(
       path: _reading(),
       textArea: [-10, -9, 10, 6],
-      lineFractions: [1, 0.8, 0.9, 0.7, 1, 0.5],
     );
     expect(String.fromCharCodes(gif.sublist(0, 6)), 'GIF89a');
     expect(gif.last, 0x3B);
@@ -58,5 +58,18 @@ void main() {
         if (gif[i] == 0x21 && gif[i + 1] == 0xF9) i
     ];
     expect(frames.length, lessThanOrEqualTo(101));
+  });
+
+  testWidgets('com o texto da tarefa desenhado no fundo', (tester) async {
+    final gif = (await tester.runAsync(() => replayGifWithText(
+          path: _reading(),
+          textArea: [-12, -8, 12, 6],
+          passage: passageById('text'),
+        )))!;
+    expect(String.fromCharCodes(gif.sublist(0, 6)), 'GIF89a');
+    // Paleta de 32 cores.
+    expect(gif[10], 0xF4);
+    final out = Platform.environment['EYELEARN_GIF_TEXT_OUT'];
+    if (out != null) File(out).writeAsBytesSync(gif);
   });
 }

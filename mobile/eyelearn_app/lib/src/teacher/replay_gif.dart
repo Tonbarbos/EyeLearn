@@ -1,26 +1,32 @@
 /// O time-lapse do olhar como GIF animado, para baixar e mostrar fora do
 /// painel (numa apresentação, num vídeo).
 ///
-/// Desenho e codificação em Dart puro, sem pacote: o quadro é simples (o
-/// fundo da tela de leitura, as linhas do texto como barras, a bolinha e o
-/// rastro dela), cabe numa paleta fixa de 16 cores, e o GIF com paleta fixa
-/// é só um LZW sobre os índices. Nada sai do navegador: o arquivo é montado
-/// aqui e entregue como download.
+/// O fundo (a tela de leitura com o texto da tarefa) é desenhado uma vez
+/// pelo próprio Flutter, com as mesmas funções do painel, e convertido para
+/// a paleta; os quadros (a bolinha e o rastro) são desenhados por cima, em
+/// Dart puro, e codificados num GIF de paleta fixa (um LZW sobre os
+/// índices). Nada sai do navegador: o arquivo é montado aqui e entregue
+/// como download.
 library;
 
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:eyelearn_core/eyelearn_core.dart';
+import 'package:flutter/painting.dart';
 
-/// Paleta: fundo, barras do texto, borda do texto, bolinha, borda branca,
-/// quatro tons do rastro (âmbar sobre o fundo), trilho e avanço da barra de
-/// progresso, e as cores dos estados: bolinha vermelha (olhar fora da tela),
-/// fundo e barras escurecidos (fora da tela) e fundo cinza (rosto fora da
-/// câmera). Sem transparência no GIF, os tons já vêm misturados.
+import '../activity/passages.dart';
+import 'heatmap_view.dart';
+
+/// Paleta: fundo, borda do texto, bolinha, borda branca, quatro tons do
+/// rastro (âmbar sobre o fundo), trilho e avanço da barra de progresso, os
+/// estados (bolinha vermelha do olhar fora da tela, fundo escurecido, fundo
+/// cinza do rosto fora da câmera) e a tinta do texto, cheia e meio-tom, nas
+/// três versões. Sem transparência no GIF, os tons já vêm misturados.
 const List<int> _palette = [
   0xFFFDF8, // 0 fundo (Palette.readingSurface)
-  0xD5D3E3, // 1 linhas do texto
+  0xD5D3E3, // 1 (sem uso)
   0x9AA0BF, // 2 borda do texto
   0xFFB23F, // 3 bolinha (Palette.amber)
   0xFFFFFF, // 4 borda da bolinha
@@ -33,24 +39,117 @@ const List<int> _palette = [
   0x1C2033, // 11 tinta
   0xF2594B, // 12 bolinha fora da tela (Palette.coral)
   0xDFDEDC, // 13 fundo escurecido: olhar fora da tela
-  0xBBBACA, // 14 linhas escurecidas
+  0xBBBACA, // 14 (sem uso)
   0xBFC0CC, // 15 fundo cinza: rosto fora da câmera
+  0x4A4F6A, // 16 texto
+  0x44485F, // 17 texto escurecido
+  0x6D728C, // 18 texto no cinza
+  0xA4A6B1, // 19 meio-tom do texto
+  0x91939F, // 20 meio-tom escurecido
+  0x969AAC, // 21 meio-tom no cinza
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
 ];
+
+/// Fundo, texto e meio-tom em cada estado: normal, olhar fora da tela e
+/// rosto fora da câmera.
+const _dimmed = {0: 13, 16: 17, 19: 20};
+const _greyed = {0: 15, 16: 18, 19: 21};
+
+/// Cor do texto no fundo do GIF.
+const textInk = Color(0xFF4A4F6A);
+
+/// Converte a tela desenhada (RGBA) para os índices da paleta: cada pixel
+/// vira o mais próximo entre fundo, borda, texto e meio-tom do texto.
+Uint8List indexScreen(Uint8List rgba) {
+  const candidates = [0, 2, 16, 19];
+  final out = Uint8List(rgba.length ~/ 4);
+  for (var i = 0; i < out.length; i++) {
+    final r = rgba[4 * i], g = rgba[4 * i + 1], b = rgba[4 * i + 2];
+    var best = 0, bestDistance = 1 << 30;
+    for (final c in candidates) {
+      final p = _palette[c];
+      final dr = r - ((p >> 16) & 255);
+      final dg = g - ((p >> 8) & 255);
+      final db = b - (p & 255);
+      final d = dr * dr + dg * dg + db * db;
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = c;
+      }
+    }
+    out[i] = best;
+  }
+  return out;
+}
+
+/// Desenha a tela de leitura com o texto e devolve os índices da paleta.
+Future<Uint8List> renderScreenIndices({
+  required int width,
+  required int height,
+  required double halfWidth,
+  required double halfHeight,
+  required List<double>? textArea,
+  required Passage? passage,
+}) async {
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  final size = Size(width.toDouble(), height.toDouble());
+  paintScreenBackground(canvas, size, halfWidth, halfHeight, textArea);
+  paintPassageText(canvas, size, halfWidth, halfHeight, textArea, passage,
+      colour: textInk);
+  final image = await recorder.endRecording().toImage(width, height);
+  final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  image.dispose();
+  return indexScreen(data!.buffer.asUint8List());
+}
+
+/// O GIF com o texto da tarefa no fundo.
+Future<Uint8List> replayGifWithText({
+  required GazePath path,
+  double halfWidth = 14,
+  double halfHeight = 24,
+  List<double>? textArea,
+  Passage? passage,
+  int width = gifWidth,
+  double speed = 4,
+}) async {
+  final height = (width * halfHeight / halfWidth).round();
+  final screen = await renderScreenIndices(
+    width: width,
+    height: height,
+    halfWidth: halfWidth,
+    halfHeight: halfHeight,
+    textArea: textArea,
+    passage: passage,
+  );
+  return replayGif(
+    path: path,
+    halfWidth: halfWidth,
+    halfHeight: halfHeight,
+    textArea: textArea,
+    screen: screen,
+    width: width,
+    speed: speed,
+  );
+}
+
+/// Largura padrão do GIF: o bastante para o texto ser lido.
+const int gifWidth = 300;
 
 /// Monta o GIF do percurso.
 ///
-/// [lineFractions] é a largura de cada linha do texto em fração da mais
-/// larga (as barras cinzentas); [speed] é quantas vezes mais rápido que a
-/// leitura; [fps], quadros por segundo do GIF. A leitura é cortada em
-/// [maxFrames] quadros, acelerando se precisar, para o arquivo não crescer
-/// sem limite.
+/// [screen] é o fundo já em índices da paleta (`renderScreenIndices`), com
+/// `width * altura` pixels; sem ele, só o fundo e a moldura do texto.
+/// [speed] é quantas vezes mais rápido que a leitura; [fps], quadros por
+/// segundo do GIF. A leitura é cortada em [maxFrames] quadros, acelerando se
+/// precisar, para o arquivo não crescer sem limite.
 Uint8List replayGif({
   required GazePath path,
   double halfWidth = 14,
   double halfHeight = 24,
   List<double>? textArea,
-  List<double> lineFractions = const [],
-  int width = 200,
+  Uint8List? screen,
+  int width = gifWidth,
   double speed = 4,
   int fps = 10,
   int maxFrames = 300,
@@ -62,7 +161,6 @@ Uint8List replayGif({
   int py(double deg) =>
       ((deg + halfHeight) / (2 * halfHeight) * height).round();
 
-  // Fundo fixo: a tela de leitura com as linhas.
   final background = Uint8List(width * h);
   void rect(Uint8List buf, int x0, int y0, int x1, int y1, int colour) {
     for (var y = math.max(0, y0); y < math.min(h, y1); y++) {
@@ -72,21 +170,11 @@ Uint8List replayGif({
   }
 
   final area = textArea;
-  if (area != null && lineFractions.isNotEmpty) {
+  if (screen != null && screen.length == width * height) {
+    background.setAll(0, screen);
+  } else if (area != null) {
     final left = px(area[0]), top = py(area[1]);
     final right = px(area[2]), bottom = py(area[3]);
-    final step = (bottom - top) / lineFractions.length;
-    for (var i = 0; i < lineFractions.length; i++) {
-      final cy = top + step * (i + 0.5);
-      final half = math.max(1, (step * 0.18).round());
-      rect(
-          background,
-          left,
-          (cy - half).round(),
-          left + ((right - left) * lineFractions[i]).round(),
-          (cy + half).round(),
-          1);
-    }
     rect(background, left, top, right, top + 1, 2);
     rect(background, left, bottom - 1, right, bottom, 2);
     rect(background, left, top, left + 1, bottom, 2);
@@ -118,7 +206,8 @@ Uint8List replayGif({
 
   final out = BytesBuilder();
   out.add('GIF89a'.codeUnits);
-  out.add([width & 255, width >> 8, h & 255, h >> 8, 0xF3, 0, 0]);
+  // Paleta global de 32 cores.
+  out.add([width & 255, width >> 8, h & 255, h >> 8, 0xF4, 0, 0]);
   for (final c in _palette) {
     out.add([(c >> 16) & 255, (c >> 8) & 255, c & 255]);
   }
@@ -135,14 +224,10 @@ Uint8List replayGif({
     final away = at != null && !inside(at);
     if (noFace || away) {
       // Rosto fora da câmera: fundo cinza. Olhar fora da tela: escurecido.
-      final bg = noFace ? 15 : 13;
+      final map = noFace ? _greyed : _dimmed;
       for (var i = 0; i < width * height; i++) {
-        final c = frame[i];
-        if (c == 0) {
-          frame[i] = bg;
-        } else if (c == 1) {
-          frame[i] = 14;
-        }
+        final to = map[frame[i]];
+        if (to != null) frame[i] = to;
       }
     }
     if (!noFace) {
@@ -180,8 +265,8 @@ Uint8List replayGif({
     final last = f == count - 1;
     out.add([0x21, 0xF9, 4, 0x04, ...(_le16(last ? 200 : delay)), 0, 0]);
     out.add([0x2C, 0, 0, 0, 0, width & 255, width >> 8, h & 255, h >> 8, 0]);
-    out.add([4]);
-    out.add(_subBlocks(_lzw(frame, 4)));
+    out.add([5]);
+    out.add(_subBlocks(_lzw(frame, 5)));
   }
   out.add([0x3B]);
   return out.toBytes();

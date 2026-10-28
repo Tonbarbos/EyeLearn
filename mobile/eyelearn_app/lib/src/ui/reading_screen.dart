@@ -246,7 +246,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                 padding: const EdgeInsets.symmetric(
                   horizontal: ReadingScreenBody.horizontalPadding,
                 ),
-                child: ReadingScreenBody(key: _textKey, passage: passage),
+                child: ReadingScreenBody(linesKey: _textKey, passage: passage),
               ),
             ),
 
@@ -438,7 +438,11 @@ class ReadingScreenBody extends StatelessWidget {
 
   final Passage passage;
 
-  const ReadingScreenBody({super.key, required this.passage});
+  /// Chave do bloco das linhas, justo em volta delas: é o retângulo que vai
+  /// na sessão (`text_area_deg`) e onde o painel desenha o texto de novo.
+  final Key? linesKey;
+
+  const ReadingScreenBody({super.key, required this.passage, this.linesKey});
 
   /// Largura da linha mais larga da tarefa, no tamanho de base.
   static double widestLine(Passage passage) {
@@ -474,22 +478,28 @@ class ReadingScreenBody extends StatelessWidget {
           final fontSize = fittedFontSize(passage, constraints.maxWidth);
           final style = lineStyle.copyWith(fontSize: fontSize);
 
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final line in passage.lines)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    line,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.clip,
-                    style: style,
+          // Centrado na altura e encostado à esquerda, como sempre; o Align
+          // deixa o bloco do tamanho exato das linhas, para a medida.
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: Column(
+              key: linesKey,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final line in passage.lines)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Text(
+                      line,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.clip,
+                      style: style,
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           );
         },
       );

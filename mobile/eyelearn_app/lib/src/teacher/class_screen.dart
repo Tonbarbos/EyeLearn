@@ -1157,21 +1157,21 @@ class _GazeViews extends StatefulWidget {
 class _GazeViewsState extends State<_GazeViews> {
   late bool _replay = widget.session.heatmap == null;
 
-  void _saveGif(double speed) {
+  Future<void> _saveGif(double speed) async {
     final s = widget.session;
     final map = s.heatmap;
-    final gif = replayGif(
+    final gif = await replayGifWithText(
       path: s.gazePath!,
       halfWidth: map?.halfWidth ?? 14,
       halfHeight: map?.halfHeight ?? 24,
       textArea: map?.textArea,
-      lineFractions: passageLineFractions(s.task),
+      passage: sessionPassage(s.task),
       speed: speed,
     );
     final stamp = s.startedAt.toIso8601String().substring(0, 10);
     final who =
         widget.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-    widget.platform
+    await widget.platform
         .saveBytes('eyelearn-olhar-$who-$stamp.gif', gif, 'image/gif');
   }
 
