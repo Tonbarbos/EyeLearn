@@ -990,12 +990,15 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
       return;
     }
     setState(() => _delivery = DeliveryState.sending);
-    final blob = sealForTeacher(exported.bytes, public);
-    final sent = await deliverOrKeep(
+    final blob = sealForTeacher(exported.compactBytes, public);
+    final outcome = await deliverOrKeep(
         inbox, env.outbox ?? MemoryOutbox(), roster.classUid, blob);
     if (mounted) {
-      setState(
-          () => _delivery = sent ? DeliveryState.sent : DeliveryState.queued);
+      setState(() => _delivery = switch (outcome) {
+            DeliveryOutcome.sent => DeliveryState.sent,
+            DeliveryOutcome.offline => DeliveryState.queued,
+            DeliveryOutcome.refused => DeliveryState.refused,
+          });
     }
   }
 

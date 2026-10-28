@@ -23,6 +23,12 @@ class ExportedSession {
   const ExportedSession({required this.session, required this.bytes});
 
   String get fileName => sessionFileName(session);
+
+  /// A sessão em JSON compacto, para a entrega cifrada: menos da metade do
+  /// arquivo formatado (o percurso do time-lapse tem centenas de números,
+  /// cada um numa linha no formato bonito).
+  Uint8List get compactBytes =>
+      Uint8List.fromList(utf8.encode(jsonEncode(session.toJson())));
 }
 
 /// Monta a sessão a partir da gravação.
