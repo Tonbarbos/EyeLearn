@@ -31,6 +31,9 @@ void main() {
         onCalibrated: (_) => calibrated++,
       ),
     ));
+    await tester.pump(const Duration(milliseconds: 100));
+    // O medidor do olho aparece desde a primeira bolinha.
+    expect(find.byKey(const Key('eye-meter')), findsOneWidget);
     for (var i = 0; i < 400 && calibrated == 0; i++) {
       await tester.pump(const Duration(milliseconds: 50));
       cursorSeen |=
@@ -52,6 +55,8 @@ void main() {
     await _advance(tester, const Duration(seconds: 6));
     expect(_hint(tester), 'Mexa os olhos até a bolinha, sem virar a cabeça');
     expect(find.byKey(const Key('calibration-cursor')), findsNothing);
+    expect(find.byKey(const Key('eye-meter')), findsNothing,
+        reason: 'na atividade, nada de depuração');
     await _advance(tester, const Duration(seconds: 30));
     expect(calibrated, 0);
     expect(_hint(tester), startsWith('Seus olhos não foram até as bolinhas'));

@@ -108,6 +108,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   /// Cursor suavizado, em fração da tela; só para desenhar.
   Offset? _cursor;
 
+  /// Últimas posições do cursor e do movimento do olho, para os rastros.
+  final _cursorTrail = <Offset>[];
+  final _shiftTrail = <Offset>[];
+
   /// Posições dos quadros medidos, para a referência da leitura.
   final List<Posture> _postures = [];
 
@@ -173,6 +177,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         cursor.y / (2 * CalibrationScreen.degreesPerHalfHeight) + 0.5,
       );
       _cursor = _cursor == null ? at : Offset.lerp(_cursor, at, 0.35);
+      _cursorTrail.add(_cursor!);
+      if (_cursorTrail.length > 14) _cursorTrail.removeAt(0);
+    }
+    final shift = _calibrator.eyeShift;
+    if (shift != null) {
+      _shiftTrail.add(Offset(shift.x, shift.y));
+      if (_shiftTrail.length > 20) _shiftTrail.removeAt(0);
     }
     if (_calibrator.status == DwellStatus.filling) {
       final posture = Posture.of(frame);
@@ -203,6 +214,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     setState(() {
       _message = message;
       _cursor = null;
+      _cursorTrail.clear();
+      _shiftTrail.clear();
     });
     _postures.clear();
     _calibrator.reset();
@@ -307,12 +320,37 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                       looking: _calibrator.status == DwellStatus.filling,
                     ),
                   ),
-                if (widget.showGazeCursor && _cursor != null && !_failed)
+                if (widget.showGazeCursor && !_failed)
+                  Align(
+                    // Entre a linha do meio (50%) e a de baixo (85%).
+                    alignment: const Alignment(0, 0.36),
+                    child: _EyeMeter(
+                      shift: _calibrator.eyeShift,
+                      trail: _shiftTrail,
+                      threshold: _calibrator.minShift,
+                      onTarget: _calibrator.status == DwellStatus.filling,
+                      knowsHorizontal: _calibrator.knowsHorizontal,
+                      skipped: _calibrator.skipped,
+                    ),
+                  ),
+                if (widget.showGazeCursor && _cursor != null && !_failed) ...[
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _TrailPainter([
+                          for (final p in _cursorTrail)
+                            Offset(p.dx * constraints.maxWidth,
+                                p.dy * constraints.maxHeight),
+                        ]),
+                      ),
+                    ),
+                  ),
                   Positioned(
                     left: _cursor!.dx * constraints.maxWidth - 11,
                     top: _cursor!.dy * constraints.maxHeight - 11,
                     child: const IgnorePointer(child: _GazeCursor()),
                   ),
+                ],
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
@@ -378,4 +416,142 @@ class _GazeCursor extends StatelessWidget {
           border: Border.all(color: Colors.white, width: 2),
         ),
       );
+}
+
+/// Rastro do cursor: as últimas posições, mais fracas quanto mais antigas.
+class _TrailPainter extends CustomPainter {
+  final List<Offset> points;
+  _TrailPainter(this.points);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (var i = 0; i < points.length; i++) {
+      final age = (i + 1) / points.length;
+      canvas.drawCircle(points[i], 3 + 5 * age,
+          Paint()..color = Colors.white.withValues(alpha: 0.18 * age));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TrailPainter old) => true;
+}
+
+/// Medidor do movimento do olho, só no teste do olhar.
+///
+/// Mostra, desde a primeira bolinha, o quanto a íris saiu da posição que ela
+/// tinha olhando para o centro -- antes de existir mapa para o cursor. O
+/// anel tracejado é o mínimo que a calibração exige para contar como "foi
+/// para o lado da bolinha". Serve para ver, num celular de verdade, se o
+/// olho está sendo medido e se o limite está bom.
+class _EyeMeter extends StatelessWidget {
+  final ({double x, double y})? shift;
+  final List<Offset> trail;
+  final double threshold;
+  final bool onTarget;
+  final bool knowsHorizontal;
+  final int skipped;
+
+  const _EyeMeter({
+    required this.shift,
+    required this.trail,
+    required this.threshold,
+    required this.onTarget,
+    required this.knowsHorizontal,
+    required this.skipped,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = shift;
+    String n(double v) =>
+        '${v >= 0 ? '+' : '−'}${(v.abs() * 100).toStringAsFixed(1).replaceAll('.', ',')}%';
+    return IgnorePointer(
+      child: Column(
+        key: const Key('eye-meter'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 110,
+            height: 110,
+            child: CustomPaint(
+              painter: _EyeMeterPainter(
+                shift: s == null ? null : Offset(s.x, s.y),
+                trail: trail,
+                threshold: threshold,
+                onTarget: onTarget,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            s == null
+                ? 'movimento do olho: medindo o centro…'
+                : 'movimento do olho: x ${n(s.x)} · y ${n(s.y)} '
+                    '(mínimo ${(threshold * 100).toStringAsFixed(1).replaceAll('.', ',')}%)'
+                    '${knowsHorizontal ? '' : ' · lado ainda não aprendido'}'
+                    '${skipped > 0 ? ' · puladas: $skipped' : ''}',
+            textAlign: TextAlign.center,
+            style: AppType.body.copyWith(color: Colors.white54, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EyeMeterPainter extends CustomPainter {
+  final Offset? shift;
+  final List<Offset> trail;
+  final double threshold;
+  final bool onTarget;
+
+  _EyeMeterPainter({
+    required this.shift,
+    required this.trail,
+    required this.threshold,
+    required this.onTarget,
+  });
+
+  /// Pixels por fração da largura do olho: 0,06 (um olhar de canto) chega
+  /// perto da borda.
+  static const double _scale = 800;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final r = size.width / 2;
+    canvas.drawCircle(
+        c, r, Paint()..color = Colors.white.withValues(alpha: 0.06));
+    final line = Paint()
+      ..color = Colors.white.withValues(alpha: 0.15)
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(c.dx - r, c.dy), Offset(c.dx + r, c.dy), line);
+    canvas.drawLine(Offset(c.dx, c.dy - r), Offset(c.dx, c.dy + r), line);
+    canvas.drawCircle(
+      c,
+      threshold * _scale,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = Palette.amber.withValues(alpha: 0.6),
+    );
+    Offset place(Offset v) {
+      final p = v * _scale;
+      final d = p.distance;
+      return c + (d > r - 6 ? p / d * (r - 6) : p);
+    }
+
+    for (var i = 0; i < trail.length; i++) {
+      final age = (i + 1) / trail.length;
+      canvas.drawCircle(place(trail[i]), 1.5 + 2.5 * age,
+          Paint()..color = Colors.white.withValues(alpha: 0.25 * age));
+    }
+    final s = shift;
+    if (s == null) return;
+    canvas.drawCircle(
+        place(s), 6, Paint()..color = onTarget ? Palette.amber : Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(_EyeMeterPainter old) => true;
 }

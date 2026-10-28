@@ -119,17 +119,29 @@ void main() {
     expect(c.progress, before);
   });
 
-  test('o cursor aparece depois de três alvos e mostra onde se olha', () {
+  test('o cursor aparece depois de dois alvos e mostra onde se olha', () {
     final c = DwellCalibrator(targets: _targets);
     final eye = _Eye(noise: 0.005);
     _dwell(c, eye);
-    _dwell(c, eye);
     c.add(eye.look(0, 0));
-    expect(c.cursor, isNull, reason: 'com dois alvos o mapa não sabe o sinal');
+    expect(c.cursor, isNull, reason: 'só com o centro o mapa não sabe o sinal');
     _dwell(c, eye);
     c.add(eye.look(-10, 18));
     expect(c.cursor!.x, closeTo(-10, 3));
     expect(c.cursor!.y, closeTo(18, 3));
+  });
+
+  test('o deslocamento do olho é medido a partir do centro', () {
+    final c = DwellCalibrator(targets: _targets);
+    final eye = _Eye(noise: 0.0);
+    expect(c.eyeShift, isNull);
+    _dwell(c, eye);
+    for (var i = 0; i < 8; i++) {
+      c.add(eye.look(-10, -18));
+    }
+    expect(c.eyeShift!.x, closeTo(-10 / _gainX, 0.001));
+    expect(c.eyeShift!.y, closeTo(-18 / _gainY, 0.001));
+    expect(c.knowsHorizontal, isFalse);
   });
 
   test('o alvo só enche quando o olho vai para o lado dele', () {
