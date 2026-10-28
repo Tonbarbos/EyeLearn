@@ -27,6 +27,10 @@ enum DeliveryState {
   /// Sem internet: fica guardado e sai sozinho na próxima vez que o
   /// aplicativo abrir com conexão.
   queued,
+
+  /// A caixa respondeu e recusou: também fica guardado (e é tentado de
+  /// novo), mas o arquivo é o caminho garantido.
+  refused,
 }
 
 class FinishedScreen extends StatelessWidget {
@@ -273,7 +277,9 @@ class _AdultSection extends StatelessWidget {
             // Com envio automático, o arquivo só aparece se o envio não saiu
             // (e mesmo assim ele sai sozinho depois): ninguém precisa mexer
             // em arquivo quando a caixa de entrega funciona.
-            if (delivery == DeliveryState.queued && onShare != null)
+            if ((delivery == DeliveryState.queued ||
+                    delivery == DeliveryState.refused) &&
+                onShare != null)
               Center(
                 child: TextButton(
                   onPressed: onShare,
@@ -310,6 +316,14 @@ class _DeliveryNotice extends StatelessWidget {
           Palette.amberSoft,
           'Sem internet agora. Fica guardado aqui e vai sozinho na próxima '
               'vez que o aplicativo abrir com internet.',
+        ),
+      DeliveryState.refused => (
+          Icons.report_gmailerrorred_outlined,
+          const Color(0xFFA32317),
+          Palette.coralSoft,
+          'A caixa do professor não aceitou o envio. Ficou guardado aqui e '
+              'será tentado de novo; para garantir, use "Enviar como '
+              'arquivo".',
         ),
     };
     return NoticeCard(

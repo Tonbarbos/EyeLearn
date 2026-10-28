@@ -17,9 +17,17 @@
 create table if not exists public.entregas (
   id bigint generated always as identity primary key,
   turma text not null check (turma ~ '^[0-9a-f]{16}$'),
-  blob text not null check (length(blob) between 60 and 20000),
+  blob text not null,
   criado_em timestamptz not null default now()
 );
+
+-- Tamanho do bloco: até 500 mil caracteres. O primeiro limite (20 mil)
+-- ficou pequeno quando a sessão passou a levar o percurso do olhar para o
+-- time-lapse do painel (uma leitura de um minuto passa disso). Em separado da
+-- tabela para valer também em quem já a criou: rodar de novo troca a regra.
+alter table public.entregas drop constraint if exists entregas_blob_check;
+alter table public.entregas add constraint entregas_blob_check
+  check (length(blob) between 60 and 500000);
 
 create index if not exists entregas_por_turma on public.entregas (turma, id);
 

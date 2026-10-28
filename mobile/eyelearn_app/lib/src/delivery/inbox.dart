@@ -27,7 +27,15 @@ abstract interface class Inbox {
 
 class InboxError implements Exception {
   final String message;
-  const InboxError(this.message);
+
+  /// Código HTTP quando a caixa respondeu e recusou; `null` quando não houve
+  /// resposta (sem internet, tempo esgotado).
+  final int? status;
+
+  const InboxError(this.message, {this.status});
+
+  /// A caixa respondeu e recusou: tentar de novo do mesmo jeito não resolve.
+  bool get refused => status != null;
 
   @override
   String toString() => 'InboxError: $message';
@@ -95,7 +103,12 @@ class SupabaseInbox implements Inbox {
       throw InboxError('sem conexão ($error)');
     }
     if (response.statusCode >= 300) {
-      throw InboxError('a caixa recusou (${response.statusCode})');
+      final body = response.body;
+      throw InboxError(
+        'a caixa recusou (${response.statusCode}): '
+        '${body.length > 300 ? body.substring(0, 300) : body}',
+        status: response.statusCode,
+      );
     }
   }
 
@@ -119,7 +132,8 @@ class SupabaseInbox implements Inbox {
       throw InboxError('sem conexão ($error)');
     }
     if (response.statusCode >= 300) {
-      throw InboxError('a caixa recusou (${response.statusCode})');
+      throw InboxError('a caixa recusou (${response.statusCode})',
+          status: response.statusCode);
     }
     return [
       for (final row
@@ -134,9 +148,15 @@ class MemoryInbox implements Inbox {
   final rows = <({int id, String classUid, String blob})>[];
   bool offline = false;
 
+  /// Tamanho máximo do bloco, como a regra da tabela no Supabase.
+  int maxBlobLength = 500000;
+
   @override
   Future<void> send(String classUid, String blob) async {
     if (offline) throw const InboxError('sem conexão');
+    if (blob.length > maxBlobLength) {
+      throw const InboxError('bloco grande demais', status: 400);
+    }
     rows.add((id: rows.length + 1, classUid: classUid, blob: blob));
   }
 
@@ -204,19 +224,36 @@ class MemoryOutbox implements Outbox {
       items.removeWhere((i) => i.blob == blob);
 }
 
-/// Entrega ou guarda para depois. Devolve se saiu agora.
-Future<bool> deliverOrKeep(
+/// Como terminou uma entrega.
+enum DeliveryOutcome {
+  /// Chegou à caixa.
+  sent,
+
+  /// Sem resposta (sem internet): guardada, sai na próxima abertura.
+  offline,
+
+  /// A caixa respondeu e recusou (regra da tabela, chave errada): guardada
+  /// também, mas não adianta só esperar a internet.
+  refused,
+}
+
+/// Entrega ou guarda para depois.
+Future<DeliveryOutcome> deliverOrKeep(
     Inbox inbox, Outbox outbox, String classUid, String blob) async {
   try {
     await inbox.send(classUid, blob);
-    return true;
-  } on InboxError {
+    return DeliveryOutcome.sent;
+  } on InboxError catch (error) {
     await outbox.add(classUid, blob);
-    return false;
+    return error.refused ? DeliveryOutcome.refused : DeliveryOutcome.offline;
   }
 }
 
 /// Tenta de novo as entregas guardadas. Devolve quantas saíram.
+///
+/// Uma recusa não segura as outras (a próxima pode passar; a recusada fica
+/// guardada para quando a regra da caixa mudar). Sem conexão, para: o resto
+/// também não vai agora.
 Future<int> flushOutbox(Inbox inbox, Outbox outbox) async {
   var sent = 0;
   for (final item in await outbox.pending()) {
@@ -224,8 +261,8 @@ Future<int> flushOutbox(Inbox inbox, Outbox outbox) async {
       await inbox.send(item.classUid, item.blob);
       await outbox.remove(item.blob);
       sent++;
-    } on InboxError {
-      break; // sem conexão: o resto também não vai agora
+    } on InboxError catch (error) {
+      if (!error.refused) break;
     }
   }
   return sent;
