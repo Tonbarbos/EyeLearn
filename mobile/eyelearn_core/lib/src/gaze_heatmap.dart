@@ -1,9 +1,8 @@
 /// Mapa de calor do olhar: quanto tempo o olhar ficou em cada região da tela.
 ///
-/// Vai na sessão em vez do percurso. O percurso amostra a amostra
-/// reconstituiria o ritmo de leitura da criança em detalhe; a grade é
-/// grossa (12 x 16 células na tela inteira, cada uma com uns 2 a 3 graus) e
-/// só soma tempo, sem ordem. Basta para o professor ver se o olhar ficou no
+/// A grade é grossa (12 x 16 células na tela inteira, cada uma com uns 2 a 3
+/// graus) e só soma tempo, sem ordem; o percurso, para o time-lapse, vai à
+/// parte e reduzido ([GazePath]). Basta para o professor ver se o olhar ficou no
 /// texto, em que linhas se demorou, ou se a captura se perdeu fora da tela --
 /// que é o uso de depuração mais imediato.
 ///

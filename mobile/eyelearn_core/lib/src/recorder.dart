@@ -13,6 +13,7 @@ library;
 
 import 'calibration.dart';
 import 'face_landmarks.dart';
+import 'gaze_path.dart';
 import 'trace.dart';
 
 /// Por que uma amostra foi rejeitada.
@@ -73,6 +74,12 @@ class GazeRecorder {
   final Map<RejectionReason, int> _rejected = {};
   int _accepted = 0;
 
+  /// O olhar para o time-lapse ([path]): como o percurso, mas com o olhar
+  /// fora dos limites guardado e o motivo de cada perda.
+  final List<double> _pathX = [];
+  final List<double> _pathY = [];
+  final List<GazeSampleState> _pathState = [];
+
   GazeRecorder({
     required this.calibration,
     this.boundsDeg,
@@ -103,15 +110,20 @@ class GazeRecorder {
     }
 
     final gaze = calibration.apply(offset.x, offset.y);
-    if (boundsDeg != null &&
-        (gaze.x.abs() > boundsDeg!.w || gaze.y.abs() > boundsDeg!.h)) {
-      _reject(frame.timestamp, RejectionReason.outsideStimulus);
-      return RejectionReason.outsideStimulus;
-    }
     if (!gaze.x.isFinite || !gaze.y.isFinite) {
       _reject(frame.timestamp, RejectionReason.noFace);
       return RejectionReason.noFace;
     }
+    if (boundsDeg != null &&
+        (gaze.x.abs() > boundsDeg!.w || gaze.y.abs() > boundsDeg!.h)) {
+      _reject(frame.timestamp, RejectionReason.outsideStimulus,
+          gaze: (x: gaze.x, y: gaze.y));
+      return RejectionReason.outsideStimulus;
+    }
+
+    _pathX.add(gaze.x);
+    _pathY.add(gaze.y);
+    _pathState.add(GazeSampleState.gaze);
 
     _t.add(frame.timestamp);
     _x.add(gaze.x);
@@ -120,10 +132,18 @@ class GazeRecorder {
     return null;
   }
 
-  void _reject(double timestamp, RejectionReason reason) {
+  void _reject(double timestamp, RejectionReason reason,
+      {({double x, double y})? gaze}) {
     _t.add(timestamp);
     _x.add(double.nan);
     _y.add(double.nan);
+    _pathX.add(gaze?.x ?? double.nan);
+    _pathY.add(gaze?.y ?? double.nan);
+    _pathState.add(switch (reason) {
+      RejectionReason.outsideStimulus => GazeSampleState.gaze,
+      RejectionReason.eyesClosed => GazeSampleState.eyesClosed,
+      RejectionReason.noFace => GazeSampleState.noFace,
+    });
     _rejected.update(reason, (count) => count + 1, ifAbsent: () => 1);
   }
 
@@ -132,6 +152,16 @@ class GazeRecorder {
         t: List<double>.unmodifiable(_t),
         x: List<double>.unmodifiable(_x),
         y: List<double>.unmodifiable(_y),
+      );
+
+  /// O percurso reduzido para o time-lapse do painel, com o olhar fora da
+  /// tela e o motivo das perdas.
+  GazePath path({double rateHz = GazePath.maxRateHz}) => GazePath.sample(
+        t: _t,
+        x: _pathX,
+        y: _pathY,
+        state: _pathState,
+        rateHz: rateHz,
       );
 
   /// Indicadores de qualidade da gravação.
@@ -147,5 +177,8 @@ class GazeRecorder {
     _y.clear();
     _rejected.clear();
     _accepted = 0;
+    _pathX.clear();
+    _pathY.clear();
+    _pathState.clear();
   }
 }

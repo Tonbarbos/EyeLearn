@@ -23,14 +23,19 @@ A atividade é **dever de casa** (celular não entra na escola):
 2. Em casa, a criança abre o link no celular, toca no próprio nome, digita o
    PIN, arruma a posição (o aplicativo diz o que corrigir: distância, celular
    em pé na altura do rosto, cabeça reta, luz, brilho nos óculos -- sem
-   mostrar a câmera), olha para as bolinhas da calibração e lê. A leitura
+   mostrar a câmera), olha para as bolinhas da calibração (cada uma só anda
+   quando o olho vai até ela) e lê. A leitura
    começa sozinha; se a criança sair da posição da calibração, aparece um
    aviso, e o painel mostra quanto tempo ela ficou fora.
 3. O celular mede o percurso do olhar (fixações, sacadas, regressões) e
    **envia a sessão sozinho ao professor**, cifrada para ele.
 4. O professor abre a turma no painel: as sessões chegam sozinhas, e cada
    criança aparece comparada com a turma ou com a base ETDD70, com o mapa de
-   onde o olhar ficou.
+   onde o olhar ficou e um time-lapse da bolinha do olhar andando pela tela,
+   sobre o próprio texto da tarefa
+   (que dá para baixar em GIF). O time-lapse mostra também quando o olhar saiu
+   do celular (bolinha vermelha na borda, apontando para onde foi) e quando o
+   rosto saiu da câmera.
 
 A criança não vê resultado nenhum: o aplicativo diz que ela terminou, e é tudo.
 

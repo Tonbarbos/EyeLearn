@@ -19,6 +19,8 @@ extension type _Panel._(JSObject _) implements JSObject {
       JSUint8Array password, JSUint8Array salt, int iterations);
   external JSPromise<JSArray<_File>> pickFiles(String accept);
   external void download(String name, String text, String type);
+  @JS('download')
+  external void downloadBytes(String name, JSUint8Array bytes, String type);
   external JSPromise<JSBoolean> persist();
 }
 
@@ -57,6 +59,10 @@ class WebTeacherPlatform implements TeacherPlatform {
   @override
   Future<void> saveFile(String name, String text) async =>
       _panel?.download(name, text, 'application/json');
+
+  @override
+  Future<void> saveBytes(String name, Uint8List bytes, String type) async =>
+      _panel?.downloadBytes(name, bytes.toJS, type);
 
   @override
   Future<bool> persistStorage() async {

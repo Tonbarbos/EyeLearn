@@ -26,6 +26,9 @@ abstract interface class TeacherPlatform {
   /// Entrega um arquivo ao professor: download no navegador.
   Future<void> saveFile(String name, String text);
 
+  /// Idem, para um arquivo binário (o GIF do time-lapse).
+  Future<void> saveBytes(String name, Uint8List bytes, String type);
+
   /// Pede ao navegador que não apague os dados do site sozinho.
   Future<bool> persistStorage();
 }

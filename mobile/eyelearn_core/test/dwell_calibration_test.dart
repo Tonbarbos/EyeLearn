@@ -119,15 +119,67 @@ void main() {
     expect(c.progress, before);
   });
 
-  test('o cursor mostra onde se olha, mas não decide nada', () {
+  test('o cursor aparece depois de três alvos e mostra onde se olha', () {
     final c = DwellCalibrator(targets: _targets);
     final eye = _Eye(noise: 0.005);
     _dwell(c, eye);
     _dwell(c, eye);
-    // Olhando o canto oposto ao alvo: o alvo enche mesmo assim.
-    expect(_dwell(c, eye, lookAt: (x: -10.0, y: 18.0)), greaterThan(0));
+    c.add(eye.look(0, 0));
+    expect(c.cursor, isNull, reason: 'com dois alvos o mapa não sabe o sinal');
+    _dwell(c, eye);
+    c.add(eye.look(-10, 18));
     expect(c.cursor!.x, closeTo(-10, 3));
     expect(c.cursor!.y, closeTo(18, 3));
+  });
+
+  test('o alvo só enche quando o olho vai para o lado dele', () {
+    final c = DwellCalibrator(targets: _targets);
+    final eye = _Eye(noise: 0.005);
+    _dwell(c, eye);
+    // Alvo 1 (alto, à esquerda), olhando ainda para o centro: não enche.
+    for (var i = 0; i < 100; i++) {
+      c.add(eye.look(0, 0));
+    }
+    expect(c.index, 1);
+    expect(c.status, DwellStatus.searching);
+    expect(c.progress, 0);
+    // Foi até a bolinha: enche.
+    expect(_dwell(c, eye), greaterThan(0));
+    expect(c.index, 2);
+  });
+
+  test('quem não olha para as bolinhas não passa', () {
+    final c = DwellCalibrator(targets: _targets);
+    final eye = _Eye(noise: 0.005);
+    final events = <DwellEvent>[];
+    // Olhando sempre para o mesmo lugar, fora do celular.
+    for (var i = 0; i < 20 * 60 && !events.contains(DwellEvent.failed); i++) {
+      events.add(c.add(eye.look(30, 5)));
+    }
+    expect(events, contains(DwellEvent.failed));
+    expect(c.skipped, greaterThan(2));
+  });
+
+  test('imagem espelhada: o sinal horizontal é aprendido', () {
+    final c = DwellCalibrator(targets: _targets);
+    final eye = _Eye(noise: 0.005);
+    // Olho cujo deslocamento horizontal tem o sinal trocado.
+    FaceFrame mirrored(double x, double y) {
+      final f = eye.look(-x, y);
+      return f;
+    }
+
+    for (var target = 0; target < _targets.length; target++) {
+      var frames = 0;
+      final start = c.index;
+      while (c.index == start && frames++ < 400) {
+        final t = _targets[target];
+        c.add(mirrored(t.x, t.y));
+      }
+    }
+    expect(c.done, isTrue);
+    expect(c.skipped, 0);
+    expect(c.fit().isAcceptable(), isTrue);
   });
 
   test('um alvo errado é descartado no ajuste final', () {

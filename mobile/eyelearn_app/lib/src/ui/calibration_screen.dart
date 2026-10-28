@@ -1,10 +1,14 @@
 /// Tela de calibração: a criança olha para cada bolinha até ela mudar de lugar.
 ///
-/// A bolinha fica parada por um tempo fixo, enquanto o rosto está no quadro:
-/// meio segundo para o olho chegar até ela e depois a coleta; a medida é a
-/// mediana do que foi colhido. A tela não mostra progresso nem cursor (ver
-/// [_TargetDot]). A regra, e por que ela não exige o olhar parado, está em
+/// A bolinha só anda quando o olho foi para o lado dela e ficou lá um
+/// pouco; quem não olha para as bolinhas não passa. A regra, e por que ela
+/// confere a direção do olho e não a posição exata, está em
 /// `DwellCalibrator` (núcleo), testada sem tela.
+///
+/// No teste do olhar ([showGazeCursor]), uma bolinha branca mostra onde o
+/// aparelho acha que a pessoa olha, a partir do quarto alvo (antes disso o
+/// mapa ainda não sabe nem para que lado cada eixo anda). Na atividade ela
+/// fica escondida: a criança passaria a perseguir o cursor.
 ///
 /// Nove alvos: o centro primeiro (dá o ponto de partida do cursor) e depois a
 /// volta pela tela. Mais alvos e medida mais longa por alvo são o que tira o
@@ -74,12 +78,16 @@ class CalibrationScreen extends StatefulWidget {
   /// a criança olha para o alvo porque o vê, não porque alguém avisou.
   final void Function(CalibrationTarget)? onTargetShown;
 
+  /// Mostra o cursor do olhar (teste do olhar e vídeos de demonstração).
+  final bool showGazeCursor;
+
   const CalibrationScreen({
     super.key,
     required this.channel,
     required this.onCalibrated,
     this.onPostureReference,
     this.onTargetShown,
+    this.showGazeCursor = false,
   });
 
   @override
@@ -96,6 +104,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   );
 
   String? _message;
+
+  /// Cursor suavizado, em fração da tela; só para desenhar.
+  Offset? _cursor;
 
   /// Posições dos quadros medidos, para a referência da leitura.
   final List<Posture> _postures = [];
@@ -153,26 +164,46 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       return;
     }
     final event = _calibrator.add(frame);
+    final cursor = _calibrator.cursor;
+    if (cursor == null) {
+      _cursor = null;
+    } else {
+      final at = Offset(
+        cursor.x / (2 * CalibrationScreen.degreesPerHalfWidth) + 0.5,
+        cursor.y / (2 * CalibrationScreen.degreesPerHalfHeight) + 0.5,
+      );
+      _cursor = _cursor == null ? at : Offset.lerp(_cursor, at, 0.35);
+    }
     if (_calibrator.status == DwellStatus.filling) {
       final posture = Posture.of(frame);
       if (posture != null) _postures.add(posture);
     }
     setState(() {
       _positionIssue = null;
-      if (event == DwellEvent.targetConfirmed) _message = null;
+      // O aviso de recomeço fica até o olho acertar uma bolinha de verdade
+      // (a do centro passa sem conferência).
+      if (event == DwellEvent.targetConfirmed && _calibrator.index > 1) {
+        _message = null;
+      }
     });
     switch (event) {
       case DwellEvent.targetConfirmed:
         widget.onTargetShown?.call(calibrationTargets[_calibrator.index]);
       case DwellEvent.finished:
         _finish();
+      case DwellEvent.failed:
+        _restart('Seus olhos não foram até as bolinhas. Vamos de novo, '
+            'olhando para cada uma!');
       case DwellEvent.none:
         break;
     }
   }
 
   void _restart(String message) {
-    setState(() => _message = message);
+    setState(() {
+      _message = message;
+      _cursor = null;
+    });
     _postures.clear();
     _calibrator.reset();
     widget.onTargetShown?.call(calibrationTargets[0]);
@@ -195,9 +226,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   String get _hint => switch (_calibrator.status) {
-        DwellStatus.filling ||
-        DwellStatus.settling =>
-          'Olhe para a bolinha amarela',
+        DwellStatus.filling => 'Isso! Continue olhando…',
+        DwellStatus.settling => 'Olhe para a bolinha amarela',
+        DwellStatus.searching => _calibrator.searchingSeconds < 3
+            ? 'Olhe para a bolinha amarela'
+            : 'Mexa os olhos até a bolinha, sem virar a cabeça',
         DwellStatus.noFace => 'Não estou vendo seu rosto',
         DwellStatus.eyesClosed => 'Olhos bem abertos!',
       };
@@ -226,10 +259,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             builder: (context, constraints) => Stack(
               children: [
                 Align(
-                  alignment: Alignment.topCenter,
+                  // Na faixa livre entre a linha de alvos de cima (15% da
+                  // altura) e a do meio (50%), para nenhuma bolinha cobrir o
+                  // texto.
+                  alignment: const Alignment(0, -0.36),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(28, 18, 28, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           _message ??
@@ -247,8 +284,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                         Text(
                           _failed
                               ? ''
-                              : 'Siga a bolinha com os olhos até ela mudar '
-                                  'de lugar. Deixe a cabeça parada.',
+                              : widget.showGazeCursor && _cursor != null
+                                  ? 'A bolinha branca é onde o celular acha '
+                                      'que você olha.'
+                                  : 'Siga a bolinha com os olhos até ela '
+                                      'mudar de lugar. Deixe a cabeça parada.',
                           textAlign: TextAlign.center,
                           style: AppType.body.copyWith(
                             color: Colors.white54,
@@ -263,7 +303,15 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                   Positioned(
                     left: target.fractionX * constraints.maxWidth - 40,
                     top: target.fractionY * constraints.maxHeight - 40,
-                    child: const _TargetDot(),
+                    child: _TargetDot(
+                      looking: _calibrator.status == DwellStatus.filling,
+                    ),
+                  ),
+                if (widget.showGazeCursor && _cursor != null && !_failed)
+                  Positioned(
+                    left: _cursor!.dx * constraints.maxWidth - 11,
+                    top: _cursor!.dy * constraints.maxHeight - 11,
+                    child: const IgnorePointer(child: _GazeCursor()),
                   ),
                 Align(
                   alignment: Alignment.bottomCenter,
@@ -286,23 +334,23 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 }
 
-/// O alvo: uma bolinha fixa, sem anel nem cursor.
-///
-/// O anel que enchia e o cursor provisório pareciam dizer "o aparelho está
-/// vendo seu olho aqui", mas o anel enche com o tempo (com o rosto no
-/// quadro), olhe a criança para onde olhar: a mensagem era falsa. A bolinha
-/// só diz para onde olhar.
+/// O alvo. O halo acende quando o olho está nele (o alvo está enchendo):
+/// agora isso depende do olhar, e não só do tempo, então a resposta é
+/// verdadeira.
 class _TargetDot extends StatelessWidget {
-  const _TargetDot();
+  final bool looking;
+
+  const _TargetDot({required this.looking});
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         width: 80,
         height: 80,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Palette.amber.withValues(alpha: 0.14),
+          color: Palette.amber.withValues(alpha: looking ? 0.38 : 0.14),
         ),
         child: Container(
           width: 26,
@@ -311,6 +359,23 @@ class _TargetDot extends StatelessWidget {
             shape: BoxShape.circle,
             color: Palette.amber,
           ),
+        ),
+      );
+}
+
+/// Onde o aparelho acha que a pessoa está olhando, pelo mapa provisório.
+class _GazeCursor extends StatelessWidget {
+  const _GazeCursor();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('calibration-cursor'),
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.3),
+          border: Border.all(color: Colors.white, width: 2),
         ),
       );
 }

@@ -20,8 +20,28 @@
 /// ou olhou para outro lugar justo num alvo) antes de desistir da
 /// calibração.
 ///
-/// O cursor provisório continua, só para a pessoa ver onde o aparelho acha
-/// que ela olha. Ele não decide mais nada.
+/// **Terceira versão (outubro de 2026): o olho tem de ir até a bolinha.** Só
+/// tempo deixava passar quem nem olhava para o celular. A regra nova confere
+/// a *direção* do movimento do olho, e não a posição: a partir do segundo
+/// alvo, a íris tem de ter saído de onde estava no alvo do centro, para o
+/// lado em que a bolinha está (para cima, para baixo, para um lado ou para o
+/// outro), por pelo menos [minShift] da largura do olho. Direção é o que dá
+/// para saber sem mapa; a distância exata é o que a calibração vai medir.
+///
+/// - Para cima e para baixo, o sinal é conhecido: olhar para baixo desce a
+///   íris na imagem.
+/// - Para os lados, depende de a imagem estar espelhada ou não. O primeiro
+///   alvo de lado ensina o sinal, e os seguintes têm de concordar com ele.
+/// - Só os quadros com o olho na direção certa enchem o alvo; os outros
+///   apenas não contam (o alvo não esvazia). É a parte "Kinect", sem a
+///   rigidez da primeira versão.
+/// - Um alvo que não enche em [giveUpSeconds] é pulado, sem medida. Mais de
+///   [maxSkipped] pulados e a calibração recomeça ([DwellEvent.failed]):
+///   quem não olha para as bolinhas não passa.
+///
+/// O cursor provisório volta a existir, mas só depois de três alvos (com
+/// menos, o mapa não sabe nem o sinal de cada eixo e o cursor andaria para o
+/// lado errado). Ele não decide nada; a tela o mostra só no teste do olhar.
 library;
 
 import 'dart:math' as math;
@@ -34,6 +54,9 @@ enum DwellStatus {
   /// Esperando o olho chegar ao alvo novo.
   settling,
 
+  /// O olho ainda não foi para o lado do alvo.
+  searching,
+
   /// Enchendo.
   filling,
 
@@ -45,7 +68,14 @@ enum DwellStatus {
 }
 
 /// O que aconteceu com o quadro.
-enum DwellEvent { none, targetConfirmed, finished }
+enum DwellEvent {
+  none,
+  targetConfirmed,
+  finished,
+
+  /// Alvos demais pulados: o olho não foi até as bolinhas.
+  failed,
+}
 
 class DwellCalibrator {
   /// Alvos em graus, a partir do centro da tela, na ordem de apresentação.
@@ -65,6 +95,19 @@ class DwellCalibrator {
   /// Quantos alvos [fit] pode descartar.
   final int maxDiscarded;
 
+  /// Deslocamento mínimo da íris, em fração da largura do olho, para contar
+  /// como "foi para o lado da bolinha". Olhar uns 10 graus para o lado move
+  /// a íris por volta de 0,07; 0,02 fica acima do tremor da medida (a
+  /// mediana dos últimos quadros) e bem abaixo do movimento real.
+  final double minShift;
+
+  /// Tempo procurando (rosto visível, olho na direção errada) até pular o
+  /// alvo.
+  final double giveUpSeconds;
+
+  /// Alvos que podem ser pulados antes de recomeçar.
+  final int maxSkipped;
+
   DwellCalibrator({
     required this.targets,
     this.settleSeconds = 0.5,
@@ -72,10 +115,25 @@ class DwellCalibrator {
     this.defaultGainX = 40.0,
     this.defaultGainY = 25.0,
     this.maxDiscarded = 2,
+    this.minShift = 0.02,
+    this.giveUpSeconds = 10,
+    this.maxSkipped = 2,
   }) : assert(targets.length >= 3);
 
   final List<CalibrationSample> _samples = [];
   final List<double> _xs = [], _ys = [];
+
+  /// Últimos deslocamentos, para a mediana que decide a direção.
+  final List<double> _recentX = [], _recentY = [];
+
+  /// Deslocamento medido no alvo do centro: o ponto de partida.
+  ({double x, double y})? _origin;
+
+  /// Sinal do deslocamento horizontal da íris quando o olhar vai para a
+  /// direita da tela; aprendido no primeiro alvo de lado.
+  double? _signX;
+  double _searching = 0;
+  int _skipped = 0;
 
   int _index = 0;
   double _collected = 0;
@@ -95,9 +153,15 @@ class DwellCalibrator {
 
   DwellStatus get status => _status;
 
-  /// Onde o mapa provisório põe o olhar, em graus; `null` antes do primeiro
-  /// alvo confirmado ou sem rosto.
-  ({double x, double y})? get cursor => _cursor;
+  /// Onde o mapa provisório põe o olhar, em graus; `null` antes de três
+  /// alvos confirmados ou sem rosto.
+  ({double x, double y})? get cursor => _samples.length >= 3 ? _cursor : null;
+
+  /// Há quanto tempo o alvo atual espera o olho ir para o lado dele.
+  double get searchingSeconds => _searching;
+
+  /// Alvos pulados até aqui.
+  int get skipped => _skipped;
 
   List<CalibrationSample> get samples => List.unmodifiable(_samples);
 
@@ -107,6 +171,9 @@ class DwellCalibrator {
     _index = 0;
     _map = null;
     _cursor = null;
+    _origin = null;
+    _signX = null;
+    _skipped = 0;
     _startTarget();
   }
 
@@ -115,7 +182,30 @@ class DwellCalibrator {
     _sinceShown = 0;
     _xs.clear();
     _ys.clear();
+    _recentX.clear();
+    _recentY.clear();
+    _searching = 0;
     _status = DwellStatus.settling;
+  }
+
+  /// Se a mediana dos últimos quadros mostra o olho para o lado do alvo,
+  /// em relação ao alvo do centro.
+  bool _towardTarget() {
+    final origin = _origin;
+    if (origin == null || _recentX.length < 3) return origin == null;
+    final vx = _median(_recentX) - origin.x;
+    final vy = _median(_recentY) - origin.y;
+    final first = targets.first;
+    final target = targets[_index];
+    final dx = target.x - first.x;
+    final dy = target.y - first.y;
+    if (dy.abs() > 2 && vy * dy.sign < minShift) return false;
+    if (dx.abs() > 2) {
+      if (vx.abs() < minShift) return false;
+      final sign = _signX;
+      if (sign != null && vx.sign != sign * dx.sign) return false;
+    }
+    return true;
   }
 
   /// Processa um quadro.
@@ -140,10 +230,28 @@ class DwellCalibrator {
       return DwellEvent.none;
     }
     _cursor = _map?.apply(offset.x, offset.y);
+    _recentX.add(offset.x);
+    _recentY.add(offset.y);
+    if (_recentX.length > 8) {
+      _recentX.removeAt(0);
+      _recentY.removeAt(0);
+    }
 
     if (_sinceShown < settleSeconds) {
       _status = DwellStatus.settling;
       return DwellEvent.none;
+    }
+
+    if (!_towardTarget()) {
+      _status = DwellStatus.searching;
+      _searching += dt;
+      if (_searching < giveUpSeconds) return DwellEvent.none;
+      // Não veio: pula o alvo, sem medida.
+      _skipped++;
+      _index++;
+      _startTarget();
+      if (_skipped > maxSkipped) return DwellEvent.failed;
+      return done ? DwellEvent.finished : DwellEvent.targetConfirmed;
     }
 
     _status = DwellStatus.filling;
@@ -153,12 +261,20 @@ class DwellCalibrator {
     if (_collected < collectSeconds || _xs.length < 3) return DwellEvent.none;
 
     final target = targets[_index];
-    _samples.add(CalibrationSample(
+    final sample = CalibrationSample(
       targetX: target.x,
       targetY: target.y,
       offsetX: _median(_xs),
       offsetY: _median(_ys),
-    ));
+    );
+    _samples.add(sample);
+    final origin = _origin;
+    if (origin == null) {
+      _origin = (x: sample.offsetX, y: sample.offsetY);
+    } else if (_signX == null && (target.x - targets.first.x).abs() > 2) {
+      _signX =
+          (sample.offsetX - origin.x).sign * (target.x - targets.first.x).sign;
+    }
     _map = _Provisional.fit(_samples, defaultGainX, defaultGainY);
     _index++;
     _startTarget();
