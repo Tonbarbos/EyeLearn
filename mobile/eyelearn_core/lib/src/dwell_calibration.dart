@@ -39,9 +39,10 @@
 ///   [maxSkipped] pulados e a calibração recomeça ([DwellEvent.failed]):
 ///   quem não olha para as bolinhas não passa.
 ///
-/// O cursor provisório volta a existir, mas só depois de três alvos (com
-/// menos, o mapa não sabe nem o sinal de cada eixo e o cursor andaria para o
-/// lado errado). Ele não decide nada; a tela o mostra só no teste do olhar.
+/// O cursor provisório volta a existir a partir do segundo alvo medido (com
+/// só o centro, o mapa não sabe nem o sinal de cada eixo e o cursor andaria
+/// para o lado errado). Ele não decide nada; a tela o mostra só no teste do
+/// olhar.
 library;
 
 import 'dart:math' as math;
@@ -96,9 +97,14 @@ class DwellCalibrator {
   final int maxDiscarded;
 
   /// Deslocamento mínimo da íris, em fração da largura do olho, para contar
-  /// como "foi para o lado da bolinha". Olhar uns 10 graus para o lado move
-  /// a íris por volta de 0,07; 0,02 fica acima do tremor da medida (a
-  /// mediana dos últimos quadros) e bem abaixo do movimento real.
+  /// como "foi para o lado da bolinha".
+  ///
+  /// Num celular a uns 30 cm, a tela tem por volta de 7 x 15 cm: do centro a
+  /// uma bolinha de lado o olho gira uns 5 graus, o que move a íris uns 3%
+  /// da largura do olho; para cima ou para baixo, um pouco mais. O primeiro
+  /// valor (0,02) ficava perto demais disso e, num celular real, travava a
+  /// calibração. 0,012 ainda fica acima do tremor da mediana dos últimos
+  /// quadros. O teste do olhar (`#olhar`) mostra o deslocamento ao vivo.
   final double minShift;
 
   /// Tempo procurando (rosto visível, olho na direção errada) até pular o
@@ -115,7 +121,7 @@ class DwellCalibrator {
     this.defaultGainX = 40.0,
     this.defaultGainY = 25.0,
     this.maxDiscarded = 2,
-    this.minShift = 0.02,
+    this.minShift = 0.012,
     this.giveUpSeconds = 10,
     this.maxSkipped = 2,
   }) : assert(targets.length >= 3);
@@ -153,9 +159,23 @@ class DwellCalibrator {
 
   DwellStatus get status => _status;
 
-  /// Onde o mapa provisório põe o olhar, em graus; `null` antes de três
-  /// alvos confirmados ou sem rosto.
-  ({double x, double y})? get cursor => _samples.length >= 3 ? _cursor : null;
+  /// Onde o mapa provisório põe o olhar, em graus; `null` antes de dois
+  /// alvos medidos (o centro e um canto: com eles o mapa já sabe o ganho e o
+  /// sinal de cada eixo) ou sem rosto.
+  ({double x, double y})? get cursor => _samples.length >= 2 ? _cursor : null;
+
+  /// Quanto a íris se moveu desde o alvo do centro (mediana dos últimos
+  /// quadros), em fração da largura do olho; `null` antes de medir o centro.
+  /// Com o sinal horizontal já aprendido, positivo é para a direita da tela.
+  ({double x, double y})? get eyeShift {
+    final origin = _origin;
+    if (origin == null || _recentX.isEmpty) return null;
+    final vx = _median(_recentX) - origin.x;
+    return (x: vx * (_signX ?? 1), y: _median(_recentY) - origin.y);
+  }
+
+  /// Se o sinal horizontal já foi aprendido.
+  bool get knowsHorizontal => _signX != null;
 
   /// Há quanto tempo o alvo atual espera o olho ir para o lado dele.
   double get searchingSeconds => _searching;
