@@ -153,40 +153,45 @@ class _HeatmapPainter extends CustomPainter {
   _HeatmapPainter(this.map, this.passage);
 
   @override
-  void paint(Canvas canvas, Size size) {
-    paintScreenBackground(
-        canvas, size, map.halfWidth, map.halfHeight, map.textArea);
-    _paintHeat(canvas, size);
-    // O texto por cima do calor, para ler onde o olhar se demorou.
-    paintPassageText(
-        canvas, size, map.halfWidth, map.halfHeight, map.textArea, passage,
-        colour: Palette.ink.withValues(alpha: 0.85));
-  }
-
-  void _paintHeat(Canvas canvas, Size size) {
-    // O calor: cada célula com opacidade proporcional ao tempo.
-    final peak = map.seconds.fold<double>(0, math.max);
-    if (peak <= 0) return;
-    final cw = size.width / map.columns;
-    final ch = size.height / map.rows;
-    for (var row = 0; row < map.rows; row++) {
-      for (var col = 0; col < map.columns; col++) {
-        final v = map.seconds[row * map.columns + col] / peak;
-        if (v <= 0) continue;
-        final colour =
-            Color.lerp(const Color(0xFFFFC94D), const Color(0xFFE5482F), v)!;
-        canvas.drawRect(
-          Rect.fromLTWH(col * cw, row * ch, cw, ch),
-          Paint()
-            ..color = colour.withValues(alpha: 0.15 + 0.6 * math.sqrt(v))
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-        );
-      }
-    }
-  }
+  void paint(Canvas canvas, Size size) =>
+      paintHeatmap(canvas, size, map, passage);
 
   @override
   bool shouldRepaint(_HeatmapPainter old) => old.map != map;
+}
+
+/// O mapa de calor inteiro: a tela, o calor e o texto por cima. Fora do
+/// widget para o relatório em PDF desenhar a mesma imagem.
+void paintHeatmap(Canvas canvas, Size size, GazeHeatmap map, Passage? passage) {
+  paintScreenBackground(
+      canvas, size, map.halfWidth, map.halfHeight, map.textArea);
+  _paintHeat(canvas, size, map);
+  // O texto por cima do calor, para ler onde o olhar se demorou.
+  paintPassageText(
+      canvas, size, map.halfWidth, map.halfHeight, map.textArea, passage,
+      colour: Palette.ink.withValues(alpha: 0.85));
+}
+
+void _paintHeat(Canvas canvas, Size size, GazeHeatmap map) {
+  // O calor: cada célula com opacidade proporcional ao tempo.
+  final peak = map.seconds.fold<double>(0, math.max);
+  if (peak <= 0) return;
+  final cw = size.width / map.columns;
+  final ch = size.height / map.rows;
+  for (var row = 0; row < map.rows; row++) {
+    for (var col = 0; col < map.columns; col++) {
+      final v = map.seconds[row * map.columns + col] / peak;
+      if (v <= 0) continue;
+      final colour =
+          Color.lerp(const Color(0xFFFFC94D), const Color(0xFFE5482F), v)!;
+      canvas.drawRect(
+        Rect.fromLTWH(col * cw, row * ch, cw, ch),
+        Paint()
+          ..color = colour.withValues(alpha: 0.15 + 0.6 * math.sqrt(v))
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+      );
+    }
+  }
 }
 
 /// O time-lapse do olhar: a bolinha andando pela tela de leitura, mais

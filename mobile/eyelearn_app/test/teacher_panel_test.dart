@@ -467,6 +467,25 @@ void main() {
     expect(platform.savedBytes.keys.single, endsWith('.gif'));
     await _tap(tester, find.text('Fechar'));
 
+    // Relatórios em PDF: da sessão e da turma.
+    Future<Uint8List> report(Finder button) async {
+      platform.savedBytes.clear();
+      await _tap(tester, button);
+      for (var i = 0; i < 50 && platform.savedBytes.isEmpty; i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 100)));
+        await tester.pump();
+      }
+      expect(platform.savedBytes.keys.single, endsWith('.pdf'));
+      return platform.savedBytes.values.single;
+    }
+
+    final single = await report(find.text('Relatório (PDF)'));
+    expect(String.fromCharCodes(single.sublist(0, 5)), '%PDF-');
+    expect(platform.savedBytes.keys.single, startsWith('eyelearn-relatorio-'));
+    final all = await report(find.byKey(const Key('class-report')));
+    expect(String.fromCharCodes(all.sublist(0, 5)), '%PDF-');
+
     await _tap(tester, find.text('Leitura da turma'));
     // Uma sessão só: não há turma, e a base entra sozinha.
     await tester.runAsync(

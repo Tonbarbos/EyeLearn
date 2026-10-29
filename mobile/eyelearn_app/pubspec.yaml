@@ -39,6 +39,7 @@ dependencies:
   # Envio da sessão à caixa de entrega (Supabase, pela API REST). Pacote da
   # equipe do Dart; no navegador usa o fetch.
   http: ^1.2.2
+  pdf: ^3.13.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
