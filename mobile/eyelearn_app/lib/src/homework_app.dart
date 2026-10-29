@@ -927,6 +927,11 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
   _RunStage _stage = _RunStage.positioning;
   GazeCalibration? _calibration;
   PostureReference? _posture;
+
+  /// Por que voltou para a tela de posição, e quantas vezes (cada volta
+  /// recria as telas do zero).
+  String? _notice;
+  int _attempt = 0;
   ExportedSession? _exported;
   DeliveryState? _delivery;
   late DateTime _startedAt;
@@ -990,23 +995,34 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
       return;
     }
     setState(() => _delivery = DeliveryState.sending);
-    final blob = sealForTeacher(exported.bytes, public);
-    final sent = await deliverOrKeep(
+    final blob = sealForTeacher(exported.compactBytes, public);
+    final outcome = await deliverOrKeep(
         inbox, env.outbox ?? MemoryOutbox(), roster.classUid, blob);
     if (mounted) {
-      setState(
-          () => _delivery = sent ? DeliveryState.sent : DeliveryState.queued);
+      setState(() => _delivery = switch (outcome) {
+            DeliveryOutcome.sent => DeliveryState.sent,
+            DeliveryOutcome.offline => DeliveryState.queued,
+            DeliveryOutcome.refused => DeliveryState.refused,
+          });
     }
   }
 
   @override
   Widget build(BuildContext context) => switch (_stage) {
         _RunStage.positioning => PositioningScreen(
+            key: ValueKey('posicao-$_attempt'),
             channel: _gaze,
+            notice: _notice,
             onReady: () => setState(() => _stage = _RunStage.calibrating),
           ),
         _RunStage.calibrating => CalibrationScreen(
+            key: ValueKey('calibracao-$_attempt'),
             channel: _gaze,
+            onFailed: (message) => setState(() {
+              _notice = '$message Antes, vamos arrumar a posição.';
+              _attempt++;
+              _stage = _RunStage.positioning;
+            }),
             onPostureReference: (reference) => _posture = reference,
             onTargetShown: env.onTargetShown == null
                 ? null

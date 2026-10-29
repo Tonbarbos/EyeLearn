@@ -82,6 +82,12 @@ class CalibrationScreen extends StatefulWidget {
   /// vídeos de demonstração).
   final bool showGazeCursor;
 
+  /// Chamada quando a calibração não deu certo, com a frase para a pessoa.
+  /// Sem ela, a calibração recomeça na própria tela; com ela, quem chamou
+  /// decide (o aplicativo volta para a tela de posição: uma calibração que
+  /// falha costuma ser cabeça ou celular fora do lugar).
+  final void Function(String message)? onFailed;
+
   /// Mostra o medidor do movimento do olho ([_EyeMeter]). Fica também na
   /// atividade: é a resposta de que o celular está vendo o olho se mexer,
   /// sem apontar um lugar na tela que a criança passaria a perseguir.
@@ -95,6 +101,7 @@ class CalibrationScreen extends StatefulWidget {
     this.onTargetShown,
     this.showGazeCursor = false,
     this.showEyeMeter = true,
+    this.onFailed,
   });
 
   @override
@@ -218,6 +225,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   void _restart(String message) {
+    final failed = widget.onFailed;
+    if (failed != null) {
+      _subscription?.cancel();
+      _subscription = null;
+      failed(message);
+      return;
+    }
     setState(() {
       _message = message;
       _cursor = null;

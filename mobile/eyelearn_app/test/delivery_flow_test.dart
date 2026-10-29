@@ -67,16 +67,47 @@ void main() {
       expect(sent.headers.containsKey('Authorization'), isFalse);
     });
 
-    test('recusa da caixa vira InboxError', () async {
+    test('recusa da caixa vira InboxError com o código', () async {
       final inbox = config.create(
-          client: MockClient((_) async => http.Response('{}', 401)))!;
-      expect(() => inbox.send('x', 'y'), throwsA(isA<InboxError>()));
+          client: MockClient((_) async => http.Response(
+              '{"code":"23514","message":"violates check constraint"}', 400)))!;
+      await expectLater(
+        inbox.send('x', 'y'),
+        throwsA(isA<InboxError>()
+            .having((e) => e.status, 'status', 400)
+            .having((e) => e.refused, 'refused', isTrue)
+            .having((e) => e.message, 'message', contains('check'))),
+      );
+    });
+
+    test('sem resposta não é recusa', () async {
+      final inbox = config.create(
+          client: MockClient((_) async => throw http.ClientException('x')))!;
+      await expectLater(
+        inbox.send('x', 'y'),
+        throwsA(isA<InboxError>().having((e) => e.refused, 'refused', false)),
+      );
+    });
+
+    test('recusada fica guardada e não segura as outras', () async {
+      final inbox = MemoryInbox()..maxBlobLength = 5;
+      final outbox = MemoryOutbox();
+      expect(await deliverOrKeep(inbox, outbox, 'turma', 'grande-demais'),
+          DeliveryOutcome.refused);
+      await outbox.add('turma', 'b2');
+      expect(await flushOutbox(inbox, outbox), 1);
+      expect(outbox.items.single.blob, 'grande-demais');
+      // A regra da caixa mudou: sai na próxima.
+      inbox.maxBlobLength = 500000;
+      expect(await flushOutbox(inbox, outbox), 1);
+      expect(outbox.items, isEmpty);
     });
 
     test('sem internet, guarda e manda depois', () async {
       final inbox = MemoryInbox()..offline = true;
       final outbox = MemoryOutbox();
-      expect(await deliverOrKeep(inbox, outbox, 'turma', 'b1'), isFalse);
+      expect(await deliverOrKeep(inbox, outbox, 'turma', 'b1'),
+          DeliveryOutcome.offline);
       expect(outbox.items, hasLength(1));
       expect(await flushOutbox(inbox, outbox), 0);
       inbox.offline = false;

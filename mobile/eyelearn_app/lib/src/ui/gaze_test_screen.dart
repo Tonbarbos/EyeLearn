@@ -64,6 +64,7 @@ class _GazeTestScreenState extends State<GazeTestScreen> {
   late final GazeSource _source = widget.gaze();
   GazeCalibration? _calibration;
   bool _positioned = false;
+  String? _notice;
 
   /// Cada calibração nova recria a tela de calibração do zero.
   int _round = 0;
@@ -81,6 +82,7 @@ class _GazeTestScreenState extends State<GazeTestScreen> {
       return PositioningScreen(
         key: ValueKey('posicao-$_round'),
         channel: _source,
+        notice: _notice,
         onReady: () => setState(() => _positioned = true),
       );
     }
@@ -92,6 +94,11 @@ class _GazeTestScreenState extends State<GazeTestScreen> {
             ? null
             : (target) => widget.onTargetShown!(_source, target),
         onCalibrated: (c) => setState(() => _calibration = c),
+        onFailed: (message) => setState(() {
+          _notice = '$message Antes, vamos arrumar a posição.';
+          _positioned = false;
+          _round++;
+        }),
         showGazeCursor: true,
       );
     }
@@ -102,6 +109,7 @@ class _GazeTestScreenState extends State<GazeTestScreen> {
       onRecalibrate: () => setState(() {
         _calibration = null;
         _positioned = false;
+        _notice = null;
         _round++;
       }),
       onExit: () => Navigator.of(context).maybePop(),
@@ -174,7 +182,8 @@ class _GazeViewerState extends State<GazeViewer> {
 
     _posture = Posture.of(frame) ?? _posture;
     final offset = irisOffset(frame);
-    final gaze = offset == null || offset.openness < minimumOpenness
+    final blink = widget.calibration.blinkOpenness;
+    final gaze = offset == null || offset.openness < blink
         ? null
         : widget.calibration.apply(offset.x, offset.y);
     final usable = gaze != null && gaze.x.isFinite && gaze.y.isFinite;
@@ -182,7 +191,7 @@ class _GazeViewerState extends State<GazeViewer> {
     setState(() {
       _problem = offset == null
           ? RejectionReason.noFace
-          : offset.openness < minimumOpenness
+          : offset.openness < blink
               ? RejectionReason.eyesClosed
               : usable
                   ? null

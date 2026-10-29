@@ -65,12 +65,16 @@ class PositioningScreen extends StatefulWidget {
   /// Depois de quanto tempo aparece "Continuar assim mesmo".
   final Duration giveUpAfter;
 
+  /// Aviso no topo, quando a tela volta depois de uma calibração que falhou.
+  final String? notice;
+
   const PositioningScreen({
     super.key,
     required this.channel,
     required this.onReady,
     this.hold = const Duration(milliseconds: 1500),
     this.giveUpAfter = const Duration(seconds: 20),
+    this.notice,
   });
 
   @override
@@ -211,6 +215,18 @@ class _PositioningScreenState extends State<PositioningScreen> {
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
                   children: [
+                    if (widget.notice case final notice?) ...[
+                      Text(
+                        notice,
+                        key: const Key('positioning-notice'),
+                        textAlign: TextAlign.center,
+                        style: AppType.body.copyWith(
+                          color: Palette.amber,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     Text(
                       'Antes de começar',
                       style: AppType.body

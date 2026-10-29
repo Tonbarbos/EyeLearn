@@ -30,8 +30,17 @@
 ///
 /// - Para cima e para baixo, o sinal é conhecido: olhar para baixo desce a
 ///   íris na imagem.
-/// - Para os lados, depende de a imagem estar espelhada ou não. O primeiro
-///   alvo de lado ensina o sinal, e os seguintes têm de concordar com ele.
+/// - Para os lados, depende de a imagem estar espelhada ou não. O sinal é
+///   aprendido pela diferença entre os dois primeiros alvos de lados opostos
+///   (o de cima à esquerda e o de cima à direita): de um para o outro o olho
+///   anda o dobro, e um tremor não engana. A primeira versão aprendia num
+///   alvo só, e num celular real um tremor de cabeça nesse alvo inverteu o
+///   lado de todos os seguintes (era preciso olhar para a esquerda para
+///   encher a bolinha da direita). Antes de saber o sinal, os alvos de lado
+///   exigem só que o olho saia para um dos lados.
+/// - Olhar para baixo baixa a pálpebra. O limite de piscada é uma fração da
+///   abertura medida no centro ([blinkOpenness]), não o piso fixo: com ele,
+///   as bolinhas de baixo viravam "olhos bem abertos" sem fim.
 /// - Só os quadros com o olho na direção certa enchem o alvo; os outros
 ///   apenas não contam (o alvo não esvazia). É a parte "Kinect", sem a
 ///   rigidez da primeira versão.
@@ -136,8 +145,12 @@ class DwellCalibrator {
   ({double x, double y})? _origin;
 
   /// Sinal do deslocamento horizontal da íris quando o olhar vai para a
-  /// direita da tela; aprendido no primeiro alvo de lado.
+  /// direita da tela; aprendido entre dois alvos de lados opostos.
   double? _signX;
+
+  /// Abertura dos olhos no alvo do centro, para o limite de piscada.
+  final List<double> _openness = [];
+  double? _baselineOpenness;
   double _searching = 0;
   int _skipped = 0;
 
@@ -174,6 +187,15 @@ class DwellCalibrator {
     return (x: vx * (_signX ?? 1), y: _median(_recentY) - origin.y);
   }
 
+  /// Abertura abaixo da qual o quadro é piscada: 40% da abertura medida no
+  /// centro, nunca acima do piso fixo [minimumOpenness] (e nunca abaixo de
+  /// 0,05, onde já é olho fechado de qualquer jeito).
+  double get blinkOpenness {
+    final base = _baselineOpenness;
+    if (base == null) return minimumOpenness;
+    return (0.4 * base).clamp(0.05, minimumOpenness).toDouble();
+  }
+
   /// Se o sinal horizontal já foi aprendido.
   bool get knowsHorizontal => _signX != null;
 
@@ -193,6 +215,8 @@ class DwellCalibrator {
     _cursor = null;
     _origin = null;
     _signX = null;
+    _openness.clear();
+    _baselineOpenness = null;
     _skipped = 0;
     _startTarget();
   }
@@ -206,6 +230,24 @@ class DwellCalibrator {
     _recentY.clear();
     _searching = 0;
     _status = DwellStatus.settling;
+  }
+
+  /// O sinal horizontal, pela diferença entre dois alvos medidos de lados
+  /// opostos; `null` se ainda não há o par ou se o olho mal se moveu entre
+  /// eles (aí não dá para confiar no sinal).
+  double? _learnSign() {
+    final first = targets.first.x;
+    for (var i = 1; i < _samples.length; i++) {
+      for (var j = i + 1; j < _samples.length; j++) {
+        final a = _samples[i], b = _samples[j];
+        final da = a.targetX - first, db = b.targetX - first;
+        if (da.abs() <= 2 || db.abs() <= 2 || da.sign == db.sign) continue;
+        final moved = b.offsetX - a.offsetX;
+        if (moved.abs() < 2 * minShift) continue;
+        return moved.sign * (b.targetX - a.targetX).sign;
+      }
+    }
+    return null;
   }
 
   /// Se a mediana dos últimos quadros mostra o olho para o lado do alvo,
@@ -245,7 +287,7 @@ class DwellCalibrator {
       _cursor = null;
       return DwellEvent.none;
     }
-    if (offset.openness < minimumOpenness) {
+    if (offset.openness < blinkOpenness) {
       _status = DwellStatus.eyesClosed;
       return DwellEvent.none;
     }
@@ -277,6 +319,7 @@ class DwellCalibrator {
     _status = DwellStatus.filling;
     _xs.add(offset.x);
     _ys.add(offset.y);
+    if (_origin == null) _openness.add(offset.openness);
     _collected += dt;
     if (_collected < collectSeconds || _xs.length < 3) return DwellEvent.none;
 
@@ -288,12 +331,11 @@ class DwellCalibrator {
       offsetY: _median(_ys),
     );
     _samples.add(sample);
-    final origin = _origin;
-    if (origin == null) {
+    if (_origin == null) {
       _origin = (x: sample.offsetX, y: sample.offsetY);
-    } else if (_signX == null && (target.x - targets.first.x).abs() > 2) {
-      _signX =
-          (sample.offsetX - origin.x).sign * (target.x - targets.first.x).sign;
+      _baselineOpenness = _median(_openness);
+    } else {
+      _signX ??= _learnSign();
     }
     _map = _Provisional.fit(_samples, defaultGainX, defaultGainY);
     _index++;
@@ -326,7 +368,7 @@ class DwellCalibrator {
           'erro de ${calibration.residualDegrees.toStringAsFixed(1)}° '
           'mesmo descartando os alvos que destoavam');
     }
-    return calibration;
+    return calibration.withBlinkOpenness(blinkOpenness);
   }
 
   static int _worst(GazeCalibration c, List<CalibrationSample> samples) {
