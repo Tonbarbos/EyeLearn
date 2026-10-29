@@ -44,6 +44,7 @@ ExportedSession exportSession({
   GazeHeatmap? heatmap,
   double? outOfPositionRatio,
   GazePath? gazePath,
+  double? calibrationErrorDegrees,
 }) {
   final session = Session.fromAnalysis(
     participantCode: participantCode,
@@ -58,6 +59,7 @@ ExportedSession exportSession({
     heatmap: heatmap,
     outOfPositionRatio: outOfPositionRatio,
     gazePath: gazePath ?? GazePath.fromTrace(trace),
+    calibrationErrorDegrees: calibrationErrorDegrees,
   );
   return ExportedSession(
     session: session,

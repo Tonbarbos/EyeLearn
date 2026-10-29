@@ -967,6 +967,7 @@ class _ActivityRunScreenState extends State<ActivityRunScreen> {
       heatmap: GazeHeatmap.fromTrace(trace, textArea: result.textArea),
       outOfPositionRatio: result.outOfPosition,
       gazePath: result.path,
+      calibrationErrorDegrees: _calibration?.residualDegrees,
     );
     // Conta como feita só se a captura serviu: uma gravação ruim fica
     // pendente, e a tela final sugere repetir.

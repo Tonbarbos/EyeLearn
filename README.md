@@ -35,7 +35,9 @@ A atividade é **dever de casa** (celular não entra na escola):
    sobre o próprio texto da tarefa
    (que dá para baixar em GIF). O time-lapse mostra também quando o olhar saiu
    do celular (bolinha vermelha na borda, apontando para onde foi) e quando o
-   rosto saiu da câmera.
+   rosto saiu da câmera. Na aba Sessões, "Relatório (PDF)" gera o relatório
+   de uma sessão, e "Relatório da turma (PDF)", o de todos os alunos (a
+   gravação mais recente de cada um em cada tarefa), sem o time-lapse.
 
 A criança não vê resultado nenhum: o aplicativo diz que ela terminou, e é tudo.
 

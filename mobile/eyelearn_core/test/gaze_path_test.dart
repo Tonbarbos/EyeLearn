@@ -46,9 +46,12 @@ void main() {
       score: 0,
       modelMetadata: const {},
       gazePath: GazePath.fromTrace(trace),
+      calibrationErrorDegrees: 3.6,
     );
     final back = Session.fromJsonString(session.toJsonString());
     expect(back.gazePath!.t, session.gazePath!.t);
+    expect(back.calibrationErrorDegrees, 3.6);
+    expect(back.approximateCalibration, isTrue);
   });
 
   group('olhar fora da tela', () {

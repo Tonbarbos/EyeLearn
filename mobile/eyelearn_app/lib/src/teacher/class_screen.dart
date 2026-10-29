@@ -14,6 +14,7 @@ import 'etdd70_comparison.dart';
 import 'heatmap_view.dart';
 import 'panel_widgets.dart';
 import 'replay_gif.dart';
+import 'session_report.dart';
 import 'teacher_platform.dart';
 import 'teacher_controller.dart';
 
@@ -931,6 +932,13 @@ class SessionsTab extends StatelessWidget {
               icon: const Icon(Icons.upload_file_rounded),
               label: const Text('Importar arquivos'),
             ),
+            if (sessions.isNotEmpty)
+              OutlinedButton.icon(
+                key: const Key('class-report'),
+                onPressed: () => _saveClassReport(context),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Relatório da turma (PDF)'),
+              ),
           ],
         ),
         const SizedBox(height: 6),
@@ -959,12 +967,85 @@ class SessionsTab extends StatelessWidget {
                     activityDeleted: s.activityCode != null &&
                         !activities.containsKey(s.activityCode),
                     platform: controller.environment.platform,
+                    onReport: () => _saveSessionReport(context, s),
                   ),
               ],
             ),
           ),
       ],
     );
+  }
+
+  Future<void> _saveSessionReport(BuildContext context, Session s) async {
+    final name = _nameOf(target, s.participantCode);
+    await _withProgress(context, () async {
+      final pdf = await buildSessionReport(
+        className: target.name,
+        session: s,
+        studentName: name,
+        classSessions: target.sessions,
+        etdd70: await _reference(),
+        now: controller.now,
+      );
+      await controller.environment.platform.saveBytes(
+          'eyelearn-relatorio-${_slug(name)}-${taskLabel(s.task).split(' ').first.toLowerCase()}'
+              '-${s.startedAt.toIso8601String().substring(0, 10)}.pdf',
+          pdf,
+          'application/pdf');
+    });
+  }
+
+  Future<void> _saveClassReport(BuildContext context) async {
+    await _withProgress(context, () async {
+      final pdf = await buildClassReport(
+        className: target.name,
+        students: [
+          for (final s in target.students) (code: s.code, name: s.fullName),
+        ],
+        sessions: target.sessions,
+        etdd70: await _reference(),
+        now: controller.now,
+      );
+      await controller.environment.platform.saveBytes(
+          'eyelearn-relatorio-turma-${_slug(target.name)}-'
+              '${controller.now.toIso8601String().substring(0, 10)}.pdf',
+          pdf,
+          'application/pdf');
+    });
+  }
+
+  /// A referência do ETDD70; sem ela o relatório sai sem essa coluna.
+  static Future<Map<String, dynamic>?> _reference() async {
+    try {
+      return await loadEtdd70Reference();
+    } on Exception {
+      return null;
+    }
+  }
+
+  static String _slug(String text) => text
+      .toLowerCase()
+      .replaceAll(RegExp('[áàâã]'), 'a')
+      .replaceAll(RegExp('[éê]'), 'e')
+      .replaceAll('í', 'i')
+      .replaceAll(RegExp('[óôõ]'), 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ç', 'c')
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+
+  /// Montar o PDF leva um instante (os mapas de calor viram imagem): mostra
+  /// que está trabalhando.
+  static Future<void> _withProgress(
+      BuildContext context, Future<void> Function() work) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger
+        ?.showSnackBar(const SnackBar(content: Text('Gerando o relatório…')));
+    try {
+      await work();
+    } finally {
+      messenger?.hideCurrentSnackBar();
+    }
   }
 }
 
@@ -975,12 +1056,14 @@ class _SessionRow extends StatelessWidget {
   final String name;
   final bool activityDeleted;
   final TeacherPlatform platform;
+  final VoidCallback onReport;
 
   const _SessionRow({
     required this.session,
     required this.name,
     required this.activityDeleted,
     required this.platform,
+    required this.onReport,
   });
 
   @override
@@ -1014,6 +1097,7 @@ class _SessionRow extends StatelessWidget {
                     '${s.samplingRateHz.round()} quadros/s',
                     if (activityDeleted) 'atividade apagada',
                     if (!ok) 'qualidade baixa',
+                    if (s.approximateCalibration) 'calibração aproximada',
                     // Fora da posição da calibração, o olhar perde precisão.
                     if ((s.outOfPositionRatio ?? 0) >= 0.1)
                       'fora da posição em '
@@ -1055,6 +1139,11 @@ class _SessionRow extends StatelessWidget {
                       onPressed: () => showEtdd70Comparison(context, s, name),
                       icon: const Icon(Icons.dataset_outlined, size: 18),
                       label: const Text('Comparar com o ETDD70'),
+                    ),
+                    TextButton.icon(
+                      onPressed: onReport,
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                      label: const Text('Relatório (PDF)'),
                     ),
                   ],
                 ),
