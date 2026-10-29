@@ -218,4 +218,55 @@ void main() {
     }
     expect(c.fit, throwsA(isA<CalibrationError>()));
   });
+
+  test('um tremor no primeiro alvo de lado não inverte o lado', () {
+    final c = DwellCalibrator(targets: _targets);
+    final eye = _Eye(noise: 0.003);
+    _dwell(c, eye); // centro
+    // Alto à esquerda: a cabeça tremeu e o olho foi um pouco para a direita.
+    expect(_dwell(c, eye, lookAt: (x: 4.0, y: -18.0)), greaterThan(0));
+    _dwell(c, eye); // alto, centro
+    _dwell(c, eye); // alto à direita: daqui sai o lado, pela diferença
+    expect(c.knowsHorizontal, isTrue);
+    // Meio à direita: olhar para a esquerda não enche...
+    for (var i = 0; i < 60; i++) {
+      c.add(eye.look(-10, 0));
+    }
+    expect(c.index, 4);
+    expect(c.status, DwellStatus.searching);
+    // ...olhar para a direita, sim.
+    expect(_dwell(c, eye), greaterThan(0));
+    expect(c.index, 5);
+  });
+
+  test('olhar para baixo baixa a pálpebra, e isso não é piscada', () {
+    final c = DwellCalibrator(targets: _targets);
+    final eye = _Eye(noise: 0.003);
+    _dwell(c, eye); // centro, olho aberto (0,3)
+    expect(c.blinkOpenness, closeTo(0.12, 0.001));
+    // Uma pessoa de olho mais estreito: 0,22 no centro.
+    final narrow = DwellCalibrator(targets: _targets);
+    for (var i = 0; i < 60 && narrow.index == 0; i++) {
+      narrow.add(eye.look(0, 0, openness: 0.22));
+    }
+    expect(narrow.blinkOpenness, closeTo(0.088, 0.001));
+    // Olhando para baixo com a pálpebra a 0,11 (abaixo do piso fixo de
+    // 0,12): conta.
+    for (var i = 0; i < 40; i++) {
+      narrow.add(eye.look(-10, -18, openness: 0.11));
+    }
+    expect(narrow.status, isNot(DwellStatus.eyesClosed));
+    // Uma piscada de verdade continua sendo piscada.
+    narrow.add(eye.look(-10, -18, openness: 0.02));
+    expect(narrow.status, DwellStatus.eyesClosed);
+    // E o limite vai junto com o mapa, para a leitura.
+    final full = DwellCalibrator(targets: _targets);
+    for (var i = 0; i < _targets.length; i++) {
+      for (var k = 0; k < 300 && full.index == i; k++) {
+        final t = _targets[i];
+        full.add(eye.look(t.x, t.y, openness: 0.22));
+      }
+    }
+    expect(full.fit().blinkOpenness, closeTo(0.088, 0.001));
+  });
 }

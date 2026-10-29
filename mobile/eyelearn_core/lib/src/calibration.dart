@@ -22,6 +22,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'face_landmarks.dart';
+
 /// Um ponto de calibração: onde a criança devia olhar e o que a câmera mediu.
 class CalibrationSample {
   /// Alvo na tela, em graus de ângulo visual a partir do centro.
@@ -84,13 +86,32 @@ class GazeCalibration {
   /// precisão em uso. Ver [isAcceptable].
   final double residualDegrees;
 
+  /// Abertura do olho abaixo da qual a amostra é piscada, para esta pessoa.
+  ///
+  /// O padrão é o piso fixo [minimumOpenness]. A calibração por tempo de
+  /// olhar troca por uma fração da abertura medida no alvo do centro: olhar
+  /// para baixo baixa a pálpebra, e com o piso fixo as linhas de baixo da
+  /// tela viravam "olhos fechados" em quem tem o olho mais estreito ou segura
+  /// o celular mais baixo.
+  final double blinkOpenness;
+
   const GazeCalibration._({
     required List<double> coefficientsX,
     required List<double> coefficientsY,
     required this.order,
     required this.residualDegrees,
+    this.blinkOpenness = minimumOpenness,
   })  : _coefficientsX = coefficientsX,
         _coefficientsY = coefficientsY;
+
+  /// O mesmo mapa, com outro limite de piscada.
+  GazeCalibration withBlinkOpenness(double value) => GazeCalibration._(
+        coefficientsX: _coefficientsX,
+        coefficientsY: _coefficientsY,
+        order: order,
+        residualDegrees: residualDegrees,
+        blinkOpenness: value,
+      );
 
   /// Ajusta o mapa aos pontos de calibração.
   ///

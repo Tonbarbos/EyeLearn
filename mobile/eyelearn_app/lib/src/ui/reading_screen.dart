@@ -137,6 +137,9 @@ class _ReadingScreenState extends State<ReadingScreen> {
       // e cortar justo na borda descartaria amostras legítimas das linhas de
       // cima e de baixo.
       boundsDeg: (w: 20.0, h: 30.0),
+      // O limite de piscada desta pessoa, medido na calibração: olhar para
+      // as linhas de baixo baixa a pálpebra, e não é piscada.
+      minOpenness: widget.calibration.blinkOpenness,
     );
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;

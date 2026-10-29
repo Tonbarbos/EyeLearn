@@ -1,5 +1,6 @@
 import 'package:eyelearn_app/src/gaze/synthetic_gaze_source.dart';
 import 'package:eyelearn_app/src/ui/calibration_screen.dart';
+import 'package:eyelearn_app/src/ui/gaze_test_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -61,6 +62,27 @@ void main() {
     await _advance(tester, const Duration(seconds: 30));
     expect(calibrated, 0);
     expect(_hint(tester), startsWith('Seus olhos não foram até as bolinhas'));
+    await gaze.stop();
+  });
+
+  testWidgets('no teste do olhar, falhar volta para a posição com o aviso',
+      (tester) async {
+    late SyntheticGazeSource gaze;
+    await tester.pumpWidget(MaterialApp(
+      home: GazeTestScreen(
+        gaze: () => gaze = SyntheticGazeSource()..lookAtDegrees(0, 0),
+      ),
+    ));
+    // Posição boa, e depois o olhar parado: a calibração falha.
+    var seen = false;
+    for (var i = 0; i < 900 && !seen; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      seen = find.byKey(const Key('positioning-notice')).evaluate().isNotEmpty;
+    }
+    expect(seen, isTrue);
+    expect(
+        tester.widget<Text>(find.byKey(const Key('positioning-notice'))).data,
+        contains('vamos arrumar a posição'));
     await gaze.stop();
   });
 }
