@@ -336,6 +336,12 @@ class _SessionSection {
       ('Quadros por segundo', '${s.samplingRateHz.round()}'),
       ('Amostras aproveitáveis', '${(100 * s.validSampleRatio).round()}%'),
       ('Captura', s.hasUsableQuality() ? 'boa' : 'baixa'),
+      if (s.calibrationErrorDegrees case final e?)
+        (
+          'Calibração',
+          '${s.approximateCalibration ? 'aproximada' : 'boa'} '
+              '(erro de ${e.toStringAsFixed(1).replaceAll('.', ',')}°)'
+        ),
       if (map?.onTextFraction case final f?)
         ('Olhar sobre o texto', '${(100 * f).round()}% do tempo'),
       if (path != null && map != null && !path.isEmpty)

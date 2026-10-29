@@ -6,13 +6,20 @@
 /// `DwellCalibrator` (núcleo), testada sem tela.
 ///
 /// No teste do olhar ([showGazeCursor]), uma bolinha branca mostra onde o
-/// aparelho acha que a pessoa olha, a partir do quarto alvo (antes disso o
+/// aparelho acha que a pessoa olha, a partir do terceiro alvo (antes disso o
 /// mapa ainda não sabe nem para que lado cada eixo anda). Na atividade ela
 /// fica escondida: a criança passaria a perseguir o cursor.
 ///
-/// Nove alvos: o centro primeiro (dá o ponto de partida do cursor) e depois a
-/// volta pela tela. Mais alvos e medida mais longa por alvo são o que tira o
-/// erro do mapa; o linear de `GazeCalibration` não precisa de mais termos.
+/// Cinco alvos: o centro primeiro (o ponto de partida) e os quatro cantos da
+/// faixa em que o texto fica na tela de leitura. O mapa é linear (três
+/// números por eixo): quatro pontos que não estejam em linha já o
+/// determinam, e o quinto confere. Os nove alvos da primeira versão iam até
+/// as bordas da tela, fora do texto -- onde o olho gira mais e, olhando
+/// para baixo, a pálpebra atrapalha -- e cada alvo a mais era uma chance a
+/// mais de errar e recomeçar. Se o mapa sai torto, só os alvos que destoaram
+/// voltam; se ainda assim o erro fica entre 3 e
+/// [_CalibrationScreenState.acceptedResidualDegrees] graus, a calibração é
+/// aceita como aproximada, e a sessão leva o erro para o professor ver.
 library;
 
 import 'dart:async';
@@ -40,17 +47,15 @@ class CalibrationTarget {
   const CalibrationTarget(this.fractionX, this.fractionY);
 }
 
-/// Os nove alvos, na ordem: centro e depois a volta pela tela.
+/// Os cinco alvos, na ordem: o centro e os cantos da faixa do texto (que na
+/// tela de leitura vai de uns 5% a 95% da largura e 25% a 75% da altura),
+/// começando pelos dois de cima, que ensinam o lado da íris.
 const List<CalibrationTarget> calibrationTargets = [
   CalibrationTarget(0.5, 0.5),
-  CalibrationTarget(0.12, 0.15),
-  CalibrationTarget(0.5, 0.15),
-  CalibrationTarget(0.88, 0.15),
-  CalibrationTarget(0.88, 0.5),
-  CalibrationTarget(0.88, 0.85),
-  CalibrationTarget(0.5, 0.85),
-  CalibrationTarget(0.12, 0.85),
-  CalibrationTarget(0.12, 0.5),
+  CalibrationTarget(0.12, 0.3),
+  CalibrationTarget(0.88, 0.3),
+  CalibrationTarget(0.88, 0.7),
+  CalibrationTarget(0.12, 0.7),
 ];
 
 class CalibrationScreen extends StatefulWidget {
@@ -214,6 +219,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     switch (event) {
       case DwellEvent.targetConfirmed:
         widget.onTargetShown?.call(calibrationTargets[_calibrator.index]);
+      case DwellEvent.retry:
+        setState(() => _message = 'Quase! Olhe de novo para esta bolinha.');
+        widget.onTargetShown?.call(calibrationTargets[_calibrator.index]);
       case DwellEvent.finished:
         _finish();
       case DwellEvent.failed:
@@ -243,13 +251,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     widget.onTargetShown?.call(calibrationTargets[0]);
   }
 
+  /// Erro médio aceito no fim, em graus. O mapa "bom" é até 3 graus; entre
+  /// 3 e este limite a calibração é aceita como aproximada (a sessão leva o
+  /// erro, e o painel avisa), em vez de mandar a criança recomeçar tudo:
+  /// pessoas desistiam na repetição.
+  static const double acceptedResidualDegrees = 4.5;
+
   void _finish() {
     try {
-      final calibration = _calibrator.fit();
-      if (!calibration.isAcceptable()) {
-        _restart('Ficou meio torto. Vamos fazer de novo, bem devagar.');
-        return;
-      }
+      final calibration =
+          _calibrator.fit(maxResidualDegrees: acceptedResidualDegrees);
       _subscription?.cancel();
       _subscription = null;
       widget.onPostureReference?.call(PostureReference.fromPostures(_postures));
@@ -293,10 +304,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             builder: (context, constraints) => Stack(
               children: [
                 Align(
-                  // Na faixa livre entre a linha de alvos de cima (15% da
-                  // altura) e a do meio (50%), para nenhuma bolinha cobrir o
-                  // texto.
-                  alignment: const Alignment(0, -0.36),
+                  // No alto, acima da linha de alvos de cima (30% da altura).
+                  alignment: const Alignment(0, -0.72),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 28),
                     child: Column(
@@ -343,8 +352,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                   ),
                 if ((widget.showEyeMeter || widget.showGazeCursor) && !_failed)
                   Align(
-                    // Entre a linha do meio (50%) e a de baixo (85%).
-                    alignment: const Alignment(0, 0.36),
+                    // Embaixo, abaixo da linha de alvos de baixo (70%).
+                    alignment: const Alignment(0, 0.67),
                     child: _EyeMeter(
                       shift: _calibrator.eyeShift,
                       trail: _shiftTrail,
@@ -378,11 +387,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 28),
                     child: StepDots(
-                      count: calibrationTargets.length,
-                      current: done
-                          ? calibrationTargets.length - 1
-                          : _calibrator.index,
-                    ),
+                        count: calibrationTargets.length,
+                        current: _calibrator.step),
                   ),
                 ),
               ],

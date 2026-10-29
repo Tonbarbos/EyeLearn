@@ -269,4 +269,62 @@ void main() {
     }
     expect(full.fit().blinkOpenness, closeTo(0.088, 0.001));
   });
+
+  group('cinco alvos, em volta do texto', () {
+    const five = [
+      (x: 0.0, y: 0.0),
+      (x: -10.6, y: -9.6),
+      (x: 10.6, y: -9.6),
+      (x: 10.6, y: 9.6),
+      (x: -10.6, y: 9.6),
+    ];
+
+    test('olhando cada um, calibra', () {
+      final c = DwellCalibrator(targets: five);
+      final eye = _Eye(noise: 0.005);
+      var last = DwellEvent.none;
+      for (var i = 0; i < 2000 && !c.done; i++) {
+        final t = five[c.index];
+        last = c.add(eye.look(t.x, t.y));
+      }
+      expect(last, DwellEvent.finished);
+      expect(c.fit().residualDegrees, lessThan(1));
+    });
+
+    test('um alvo que destoou volta para ser olhado de novo', () {
+      final c = DwellCalibrator(targets: five);
+      final eye = _Eye(noise: 0.005);
+      final events = <DwellEvent>[];
+      var shown = 0;
+      for (var i = 0; i < 3000 && !c.done; i++) {
+        final t = five[c.index];
+        // Na primeira vez no alvo 3 (baixo, à direita), olhou mais para o
+        // meio e mais para cima do que devia.
+        final wrong = c.index == 3 && shown == 0;
+        final e = c.add(
+            wrong ? eye.look(t.x * 0.12, 0.6) : eye.look(t.x, t.y));
+        if (wrong && e == DwellEvent.targetConfirmed) shown++;
+        events.add(e);
+      }
+      expect(events, contains(DwellEvent.retry));
+      expect(c.done, isTrue);
+      expect(c.fit().isAcceptable(), isTrue);
+    });
+
+    test('um alvo pulado volta no fim, e a calibração termina', () {
+      final c = DwellCalibrator(targets: five, giveUpSeconds: 2);
+      final eye = _Eye(noise: 0.005);
+      final seen = <int>[];
+      for (var i = 0; i < 3000 && !c.done; i++) {
+        final index = c.index;
+        if (seen.isEmpty || seen.last != index) seen.add(index);
+        final t = five[index];
+        // Na primeira passagem pelo alvo 2, o olho não vai até ele.
+        final away = index == 2 && seen.where((s) => s == 2).length == 1;
+        c.add(away ? eye.look(0, 0) : eye.look(t.x, t.y));
+      }
+      expect(seen, [0, 1, 2, 3, 4, 2]);
+      expect(c.fit().isAcceptable(), isTrue);
+    });
+  });
 }

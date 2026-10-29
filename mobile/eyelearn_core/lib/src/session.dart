@@ -77,6 +77,17 @@ class Session {
   /// antiga.
   final GazePath? gazePath;
 
+  /// Erro médio da calibração nos próprios alvos, em graus; `null` em sessão
+  /// antiga. Acima de [goodCalibrationDegrees] a calibração foi aceita como
+  /// aproximada: o percurso tem menos precisão.
+  final double? calibrationErrorDegrees;
+
+  /// Até onde a calibração conta como boa.
+  static const double goodCalibrationDegrees = 3.0;
+
+  bool get approximateCalibration =>
+      (calibrationErrorDegrees ?? 0) > goodCalibrationDegrees;
+
   const Session({
     required this.participantCode,
     required this.task,
@@ -91,6 +102,7 @@ class Session {
     this.heatmap,
     this.outOfPositionRatio,
     this.gazePath,
+    this.calibrationErrorDegrees,
   });
 
   /// Monta a sessão a partir da análise e do artefato usado.
@@ -107,6 +119,7 @@ class Session {
     GazeHeatmap? heatmap,
     double? outOfPositionRatio,
     GazePath? gazePath,
+    double? calibrationErrorDegrees,
   }) =>
       Session(
         participantCode: participantCode,
@@ -126,6 +139,7 @@ class Session {
         heatmap: heatmap,
         outOfPositionRatio: outOfPositionRatio,
         gazePath: gazePath,
+        calibrationErrorDegrees: calibrationErrorDegrees,
       );
 
   /// Se a gravação tem qualidade suficiente para ser interpretada.
@@ -158,6 +172,8 @@ class Session {
         if (outOfPositionRatio != null)
           'out_of_position_ratio': outOfPositionRatio,
         if (gazePath != null) 'gaze_path': gazePath!.toJson(),
+        if (calibrationErrorDegrees != null)
+          'calibration_error_deg': calibrationErrorDegrees,
       };
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());
@@ -193,6 +209,8 @@ class Session {
       gazePath: json['gaze_path'] == null
           ? null
           : GazePath.fromJson(json['gaze_path'] as Map<String, dynamic>),
+      calibrationErrorDegrees:
+          (json['calibration_error_deg'] as num?)?.toDouble(),
     );
   }
 

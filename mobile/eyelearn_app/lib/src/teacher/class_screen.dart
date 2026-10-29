@@ -1097,6 +1097,7 @@ class _SessionRow extends StatelessWidget {
                     '${s.samplingRateHz.round()} quadros/s',
                     if (activityDeleted) 'atividade apagada',
                     if (!ok) 'qualidade baixa',
+                    if (s.approximateCalibration) 'calibração aproximada',
                     // Fora da posição da calibração, o olhar perde precisão.
                     if ((s.outOfPositionRatio ?? 0) >= 0.1)
                       'fora da posição em '

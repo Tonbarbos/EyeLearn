@@ -85,6 +85,10 @@ enum DwellEvent {
 
   /// Alvos demais pulados: o olho não foi até as bolinhas.
   failed,
+
+  /// O mapa saiu torto por causa de um ou dois alvos: eles voltam para ser
+  /// olhados de novo (o próximo alvo é um deles).
+  retry,
 }
 
 class DwellCalibrator {
@@ -120,8 +124,13 @@ class DwellCalibrator {
   /// alvo.
   final double giveUpSeconds;
 
-  /// Alvos que podem ser pulados antes de recomeçar.
+  /// Alvos que podem ficar sem medida (pulados duas vezes) antes de
+  /// recomeçar.
   final int maxSkipped;
+
+  /// Erro do mapa acima do qual os alvos que mais destoam voltam, uma vez,
+  /// para serem olhados de novo.
+  final double retryAboveDegrees;
 
   DwellCalibrator({
     required this.targets,
@@ -133,9 +142,28 @@ class DwellCalibrator {
     this.minShift = 0.012,
     this.giveUpSeconds = 10,
     this.maxSkipped = 2,
-  }) : assert(targets.length >= 3);
+    this.retryAboveDegrees = 3.0,
+  }) : assert(targets.length >= 3) {
+    _order.addAll([for (var i = 0; i < targets.length; i++) i]);
+  }
 
-  final List<CalibrationSample> _samples = [];
+  /// A medida de cada alvo, pelo índice dele; um alvo olhado de novo troca
+  /// a medida anterior.
+  final Map<int, CalibrationSample> _measured = {};
+
+  /// A ordem em que os alvos são apresentados: todos, e depois os que
+  /// voltam (pulados ou que destoaram no mapa).
+  final List<int> _order = [];
+  int _pos = 0;
+
+  /// Alvos que já voltaram uma vez; e se os que destoaram já voltaram.
+  final Set<int> _retried = {};
+  bool _redone = false;
+
+  /// Pulados seguidos, sem nenhum medido no meio.
+  int _skippedInARow = 0;
+
+  List<CalibrationSample> get _samples => _measured.values.toList();
   final List<double> _xs = [], _ys = [];
 
   /// Últimos deslocamentos, para a mediana que decide a direção.
@@ -154,7 +182,6 @@ class DwellCalibrator {
   double _searching = 0;
   int _skipped = 0;
 
-  int _index = 0;
   double _collected = 0;
   double _sinceShown = 0;
   double? _lastTime;
@@ -162,10 +189,14 @@ class DwellCalibrator {
   ({double x, double y})? _cursor;
   _Provisional? _map;
 
-  /// Índice do alvo atual.
-  int get index => _index;
+  /// Índice do alvo atual (em [targets]).
+  int get index => done ? targets.length : _order[_pos];
 
-  bool get done => _index >= targets.length;
+  bool get done => _pos >= _order.length;
+
+  /// Quantos passos já foram, para os pontinhos de progresso (os alvos que
+  /// voltam ficam no último).
+  int get step => math.min(_pos, targets.length - 1);
 
   /// Quanto o alvo atual já encheu, de 0 a 1.
   double get progress => math.min(1, _collected / collectSeconds);
@@ -202,15 +233,21 @@ class DwellCalibrator {
   /// Há quanto tempo o alvo atual espera o olho ir para o lado dele.
   double get searchingSeconds => _searching;
 
-  /// Alvos pulados até aqui.
+  /// Alvos pulados até aqui (cada vez que um alvo é pulado).
   int get skipped => _skipped;
 
   List<CalibrationSample> get samples => List.unmodifiable(_samples);
 
   /// Recomeça do primeiro alvo.
   void reset() {
-    _samples.clear();
-    _index = 0;
+    _measured.clear();
+    _order
+      ..clear()
+      ..addAll([for (var i = 0; i < targets.length; i++) i]);
+    _pos = 0;
+    _retried.clear();
+    _redone = false;
+    _skippedInARow = 0;
     _map = null;
     _cursor = null;
     _origin = null;
@@ -258,7 +295,7 @@ class DwellCalibrator {
     final vx = _median(_recentX) - origin.x;
     final vy = _median(_recentY) - origin.y;
     final first = targets.first;
-    final target = targets[_index];
+    final target = targets[index];
     final dx = target.x - first.x;
     final dy = target.y - first.y;
     if (dy.abs() > 2 && vy * dy.sign < minShift) return false;
@@ -308,12 +345,19 @@ class DwellCalibrator {
       _status = DwellStatus.searching;
       _searching += dt;
       if (_searching < giveUpSeconds) return DwellEvent.none;
-      // Não veio: pula o alvo, sem medida.
+      // Não veio: pula o alvo, que volta uma vez no fim. Três seguidos sem
+      // nenhum medido é quem não está olhando para as bolinhas.
+      final current = index;
       _skipped++;
-      _index++;
+      _skippedInARow++;
+      if (_retried.add(current)) _order.add(current);
+      _pos++;
       _startTarget();
-      if (_skipped > maxSkipped) return DwellEvent.failed;
-      return done ? DwellEvent.finished : DwellEvent.targetConfirmed;
+      if (_skippedInARow >= 3) return DwellEvent.failed;
+      final permanent =
+          targets.length - _measured.length - (_order.length - _pos);
+      if (permanent > maxSkipped) return DwellEvent.failed;
+      return done ? _endOfQueue() : DwellEvent.targetConfirmed;
     }
 
     _status = DwellStatus.filling;
@@ -323,47 +367,89 @@ class DwellCalibrator {
     _collected += dt;
     if (_collected < collectSeconds || _xs.length < 3) return DwellEvent.none;
 
-    final target = targets[_index];
+    final current = index;
+    final target = targets[current];
     final sample = CalibrationSample(
       targetX: target.x,
       targetY: target.y,
       offsetX: _median(_xs),
       offsetY: _median(_ys),
     );
-    _samples.add(sample);
-    if (_origin == null) {
+    _measured[current] = sample;
+    _skippedInARow = 0;
+    if (current == 0) {
       _origin = (x: sample.offsetX, y: sample.offsetY);
       _baselineOpenness = _median(_openness);
     } else {
       _signX ??= _learnSign();
     }
     _map = _Provisional.fit(_samples, defaultGainX, defaultGainY);
-    _index++;
+    _pos++;
     _startTarget();
-    return done ? DwellEvent.finished : DwellEvent.targetConfirmed;
+    return done ? _endOfQueue() : DwellEvent.targetConfirmed;
+  }
+
+  /// Acabaram os alvos da fila. Se o mapa saiu torto por causa de um ou
+  /// dois alvos, eles voltam (uma vez só) em vez de recomeçar tudo.
+  DwellEvent _endOfQueue() {
+    if (_redone || _measured.length < 4) return DwellEvent.finished;
+    final GazeCalibration calibration;
+    try {
+      calibration = GazeCalibration.fit(_samples);
+    } on CalibrationError {
+      return DwellEvent.finished;
+    }
+    if (calibration.residualDegrees <= retryAboveDegrees) {
+      return DwellEvent.finished;
+    }
+    _redone = true;
+    final errors = [
+      for (final MapEntry(key: i, value: s) in _measured.entries)
+        (i, _error(calibration, s)),
+    ]..sort((a, b) => b.$2.compareTo(a.$2));
+    final worst = [
+      for (final (i, e) in errors.take(2))
+        if (e > retryAboveDegrees) i,
+    ];
+    if (worst.isEmpty) return DwellEvent.finished;
+    _order.addAll(worst);
+    _startTarget();
+    return DwellEvent.retry;
+  }
+
+  static double _error(GazeCalibration c, CalibrationSample s) {
+    final p = c.apply(s.offsetX, s.offsetY);
+    return math
+        .sqrt(math.pow(p.x - s.targetX, 2) + math.pow(p.y - s.targetY, 2));
   }
 
   /// O mapa final.
   ///
-  /// Se o ajuste com todos os alvos não for aceitável, tenta sem o alvo que
-  /// mais destoa, e de novo, até [maxDiscarded] alvos, enquanto sobrarem
-  /// pelo menos seis.
+  /// Se o ajuste com todos os alvos não for aceitável (erro médio acima de
+  /// [maxResidualDegrees]), tenta sem o alvo que mais destoa, e de novo, até
+  /// [maxDiscarded] alvos, enquanto sobrarem pelo menos cinco.
   ///
   /// Throws [CalibrationError] se nem assim houver mapa aceitável, ou se os
   /// alvos forem degenerados.
-  GazeCalibration fit() {
+  GazeCalibration fit({double maxResidualDegrees = 3.0}) {
+    if (_measured.length < 4) {
+      throw CalibrationError(
+          'só ${_measured.length} alvos medidos; são necessários quatro');
+    }
     var kept = List.of(_samples);
     var calibration = GazeCalibration.fit(kept);
+    bool ok(GazeCalibration c) =>
+        c.isAcceptable(maxResidualDegrees: maxResidualDegrees);
+    // Descartar só enquanto sobram mais de cinco: com quatro pontos para
+    // três números por eixo, quase qualquer coisa "se ajusta".
     for (var discarded = 0;
-        !calibration.isAcceptable() &&
-            discarded < maxDiscarded &&
-            kept.length > 6;
+        !ok(calibration) && discarded < maxDiscarded && kept.length > 5;
         discarded++) {
       final worst = _worst(calibration, kept);
       kept = [...kept]..removeAt(worst);
       calibration = GazeCalibration.fit(kept);
     }
-    if (!calibration.isAcceptable()) {
+    if (!ok(calibration)) {
       throw CalibrationError(
           'erro de ${calibration.residualDegrees.toStringAsFixed(1)}° '
           'mesmo descartando os alvos que destoavam');
